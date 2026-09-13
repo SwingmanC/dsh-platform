@@ -1,0 +1,22 @@
+{
+  "name": "@dsh-platform/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "dsh-platform 跨端共享类型:t_dsh_* 表实体镜像与网关 API DTO",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  }
+}

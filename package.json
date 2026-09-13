@@ -1,0 +1,20 @@
+{
+  "name": "dsh-platform",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DeepSeek Harness 多租户平台:网关/BFF + 每用户 dsh 运行时编排(设计文档见 docs/design/)",
+  "scripts": {
+    "dev:gateway": "pnpm --filter @dsh-platform/shared build && pnpm --filter @dsh-platform/gateway dev",
+    "dev:portal": "pnpm --filter @dsh-platform/portal dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r build && pnpm -r typecheck",
+    "db:init": "mysql --default-character-set=utf8mb4 -h127.0.0.1 -P3306 -uroot -p < db/schema.sql"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
