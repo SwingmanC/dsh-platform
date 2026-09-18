@@ -1,0 +1,26 @@
+{
+  "name": "@dsh-platform/cmcc-skill-provider",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "CMCC 平台 Skill Runtime Provider:读取 Gateway 投影目录并注册 ctx.skills provider(Host-only)",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

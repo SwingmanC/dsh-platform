@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "每用户 dsh 运行时驱动:包装 @deepseek-ai/dsh-sdk-client 管理子进程与会话生命周期",
+  "description": "实验性 / 未激活(DEFERRED_WITHOUT_PRODUCTION_PATH):每用户 dsh 运行时驱动骨架,当前无生产调用点,生产 Runtime 走 supervisor spawn",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -15,10 +15,6 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
-  },
-  "peerDependencies": {
-    "@deepseek-ai/dsh-sdk-client": "0.1.2-rc.1",
-    "@deepseek-ai/dsh-sdk-protocol": "0.1.2-rc.1"
   },
   "devDependencies": {
     "typescript": "^5.6.0"

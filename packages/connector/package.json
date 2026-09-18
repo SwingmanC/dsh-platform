@@ -1,0 +1,19 @@
+{
+  "name": "@dsh-platform/dsh-connector",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "连接器:MCP 服务管理,显示在 dsh 侧边栏",
+  "main": "./host.js",
+  "exports": {
+    ".": "./host.js",
+    "./client": "./client.bundle.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": []
+    }
+  }
+}

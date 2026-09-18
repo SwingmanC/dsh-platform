@@ -4,18 +4,33 @@
   "private": true,
   "type": "module",
   "description": "注入 dsh 实例的组合层插件对:platform-identity(Host)+ ui-platform-account(Client)",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
   "exports": {
-    "./host": "./src/host.ts",
-    "./client": "./src/client.ts"
+    ".": {
+      "types": "./lib/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer"
+      ]
+    }
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit"
-  },
-  "peerDependencies": {
-    "@deepseek-ai/cordis": "*",
-    "@deepseek-ai/dsh": "0.1.2-rc.1"
+    "build": "tsc -p tsconfig.build.json && node ../../scripts/build-client.mjs @dsh-platform/dsh-bridge packages/dsh-bridge/src/client/index.tsx packages/dsh-bridge/lib/client.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test tests/*.test.mjs"
   },
   "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/react": "^18.3.12",
+    "esbuild": "0.25.12",
     "typescript": "^5.6.0"
   }
 }

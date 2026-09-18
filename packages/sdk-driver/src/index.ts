@@ -1,10 +1,18 @@
 /**
- * 每用户 dsh 运行时驱动骨架(总方案 §5/§8、platform 设计 T2)。
+ * 每用户 dsh 运行时驱动骨架 —— **实验性 / 未激活**。
  *
- * 最终形态:以 @deepseek-ai/dsh-sdk-client(peerDependency,锁 0.1.2-rc.1)
- * 驱动该用户的 `dsh` 子进程 —— ensure(拉起/home 初始化/env 注入)、
- * create/resume/prompt/cancel/follow/page、崩溃后 resume(由 dsh 自行闭合
- * interrupted 轮次)。本骨架只固化对外接口,方法体随 T2 落地。
+ * 状态:`DEFERRED_WITHOUT_PRODUCTION_PATH`(02C 判定)。
+ *
+ * 依据:
+ * - 全仓库 grep 无生产 import / 调用点;唯一提及是 `routes/platform.ts` 的
+ *   `/api/sessions/migrate` 返回 501(`s2-requires-sdk`),该 route **不调用**本包。
+ * - 生产 Runtime 实际由 `apps/gateway/src/supervisor.ts` 直接 spawn `dsh` 进程,
+ *   不依赖本包。
+ * - 原 peerDependencies 锁的是 0.1.1 时代版本(`0.1.2-rc.1`),与 0.1.5 基线不一致,
+ *   已移除以免误导(autoInstallPeers=false,本包也不在任何 workspace 依赖路径上)。
+ *
+ * 因此本包保留为接口骨架,方法体为 TODO,但**不在 active production path**。
+ * 若未来启用,必须按 0.1.5-rc.2 官方 SDK exact contract 实现并补 contract tests。
  */
 export interface DshDriverOptions {
   userId: string

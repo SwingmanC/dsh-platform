@@ -2,10 +2,10 @@ packages:
   - apps/*
   - packages/*
 
+# pnpm 默认拦截依赖的构建脚本;esbuild 是 vite/tsx 的必需安装脚本。
+allowBuilds:
+  esbuild: true
+
 # dsh 侧 peer(@deepseek-ai/dsh*、cordis)不自动安装:
 # 骨架阶段以 peerDependencies 声明并锁 0.1.2-rc.1,接入时显式提升为 dependencies(见 README)。
 autoInstallPeers: false
-
-# pnpm 11 默认拦截依赖的构建脚本;esbuild 是 vite 的必需安装脚本。
-allowBuilds:
-  esbuild: true

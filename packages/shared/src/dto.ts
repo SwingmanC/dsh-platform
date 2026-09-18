@@ -2,11 +2,31 @@
  * 网关 API DTO(platform 设计 §8):
  * 登录/注销、工作区列表、会话列表、enter 前检查与 S1/S2 迁移的请求/响应形状。
  */
-import type { Workspace } from './types.js'
+import type { UserRole, Workspace } from './types.js'
 
+/** POST /auth/login(platform 设计 §8)。 */
+export interface LoginRequest {
+  email: string
+  password: string
+}
+
+export interface LoginResponse {
+  userId: string
+  displayName: string
+  role: UserRole
+}
+
+/** GET /auth/me。 */
 export interface MeResponse {
   userId: string
   displayName: string
+  role: UserRole
+}
+
+/** 统一错误响应:越权资源返回 404(不返回 403,防探测)。 */
+export interface ApiError {
+  error: string
+  code?: string
 }
 
 export interface WorkspaceListResponse {

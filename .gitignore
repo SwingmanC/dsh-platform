@@ -6,3 +6,5 @@ lib/
 *.log
 coverage/
 var/
+.tools/
+dump.rdb
