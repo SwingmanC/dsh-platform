@@ -12,6 +12,22 @@ Write-Host "======================================" -ForegroundColor Cyan
 Write-Host " 中国移动数智智能体平台 - 启动脚本" -ForegroundColor Cyan
 Write-Host "======================================" -ForegroundColor Cyan
 
+Write-Host "`n0/5 Clean up stale processes..." -ForegroundColor Cyan
+# Stale gateway/portal/dsh processes hold ports 8080/5173 and make the new
+# stack fail silently. Kill every node/cmd/pnpm process whose command line
+# references the repo folder (see stop.ps1), whole tree via taskkill /T.
+$stale = Get-CimInstance Win32_Process -Filter "Name='node.exe' OR Name='cmd.exe' OR Name='pnpm.cmd'" |
+    Where-Object { $cl = $_.CommandLine; $cl -and $cl -like '*dsh-platform*' }
+if ($stale) {
+    foreach ($p in $stale) {
+        cmd /c "taskkill /PID $($p.ProcessId) /T /F" 2>$null | Out-Null
+    }
+    Start-Sleep -Seconds 1
+    Write-Host "Cleaned $($stale.Count) stale process(es)" -ForegroundColor Green
+} else {
+    Write-Host "No stale processes" -ForegroundColor Green
+}
+
 Write-Host "`n1/5 Check MySQL..." -ForegroundColor Cyan
 $mysql = Get-Service -Name "MySQL" -ErrorAction SilentlyContinue
 if ($mysql -and $mysql.Status -ne 'Running') {

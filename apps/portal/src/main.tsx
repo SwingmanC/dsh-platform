@@ -20,6 +20,9 @@ interface CurrentUser {
   role: UserRole
 }
 
+/** 登录成功后直接进入 dsh 操作界面(跳过平台首页中转)。 */
+const DSH_UI_URL: string = import.meta.env.VITE_DSH_UI_URL ?? 'http://localhost:8080/'
+
 function LoginView({ onLogin }: { onLogin: (user: CurrentUser) => void }): JSX.Element {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -31,6 +34,9 @@ function LoginView({ onLogin }: { onLogin: (user: CurrentUser) => void }): JSX.E
     try {
       const res = await login(email, password)
       onLogin({ displayName: res.displayName, role: res.role })
+      // 平台会话已建立(sid cookie 跨 authority 共享);整页跳转到 dsh UI,
+      // 由网关按 Host 反代到该用户的运行时实例。
+      window.location.assign(DSH_UI_URL)
     } catch (err) {
       const code = (err as Error).message
       setError(
@@ -110,7 +116,10 @@ function App(): JSX.Element {
 
   useEffect(() => {
     getMe()
-      .then((u) => { if (u) setUser({ displayName: u.displayName, role: u.role }) })
+      .then((u) => {
+        // 已持有平台会话:不再展示平台首页,直接整页跳转到 dsh UI。
+        if (u !== null) { window.location.assign(DSH_UI_URL); return }
+      })
       .catch(() => {})
       .finally(() => setReady(true))
   }, [])

@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import type { ChildProcess, SpawnOptions } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import net from 'node:net'
 import path from 'node:path'
 import type { AuthenticatedPrincipal } from '@dsh-platform/shared'
@@ -18,6 +18,8 @@ import { getCredentialStore } from './credentials/credential-store.js'
 import { memoryService } from './services/memory-service.js'
 import { memoryProjectionDir } from './memory-projection.js'
 import { issueRuntimeToken, revokeRuntimeToken } from './internal-channel.js'
+import { ensureDefaultWorkspace } from './platform.js'
+import { migrateAgentPresetSetting } from './agent-preset-migration.js'
 
 export type RuntimeState = 'starting' | 'ready' | 'draining' | 'dead'
 
@@ -98,7 +100,7 @@ function getFreePort(): Promise<number> {
  * dsh 把 `DSH_` 前缀视为保留(见 @deepseek-ai/dsh-app-boot 的 BOOTSTRAP_PREFIXES),
  * 且不应看到网关的 MySQL/会话凭据。仅注入实例运行所需项。
  */
-function childEnv(homeDir: string, workspaceRoot: string, user: RuntimeUser, mcpSecrets: Record<string, string> = {}, memoryToken = ''): NodeJS.ProcessEnv {
+function childEnv(homeDir: string, workspaceRoot: string, user: RuntimeUser, mcpSecrets: Record<string, string> = {}, memoryToken = '', defaultWorkspace: { path: string; title: string } | null = null): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...process.env }
   for (const key of Object.keys(env)) {
     if (
@@ -139,6 +141,11 @@ function childEnv(homeDir: string, workspaceRoot: string, user: RuntimeUser, mcp
   env.PLATFORM_MEMORY_MAX_RECALL_ITEMS = String(config.memory.maxRecallItems)
   env.PLATFORM_MEMORY_MAX_RECALL_BYTES = String(config.memory.maxRecallBytes)
   env.PLATFORM_MEMORY_MAX_ITEM_BYTES = String(config.memory.maxItemBytes)
+  // 默认 Workspace 引导(服务端生成路径;cmcc-workspace-bootstrap 只读消费)。
+  if (defaultWorkspace !== null) {
+    env.CMCC_DEFAULT_WORKSPACE_PATH = defaultWorkspace.path
+    env.CMCC_DEFAULT_WORKSPACE_TITLE = defaultWorkspace.title
+  }
   // dev/test 凭据映射(仅 canary/qualification 测试 Runtime):
   // PLATFORM_TEST_DEEPSEEK_API_KEY → DEEPSEEK_API_KEY。
   //
@@ -302,25 +309,55 @@ async function spawnRuntime(user: RuntimeUser): Promise<RuntimeInfo> {
   await mkdir(homeDir, { recursive: true })
   await mkdir(workspaceRoot, { recursive: true })
 
-  // Runtime start / ensureRuntime:启动前重建该用户 Skill 投影,确保首启即见正确 catalog。
+  // Runtime preflight: 0.1.1 → 0.1.5 agent-preset upgrade compatibility.
+  // A stale `agent-presets.default: code` would make every new Session fail with
+  // `agent-preset/not-found`; migrate it to `ptc` before the Runtime spawns.
   try {
-    await buildSkillProjection(user.tenantId, user.userId)
+    const migration = await migrateAgentPresetSetting(homeDir)
+    if (migration.status === 'migrated') {
+      process.stderr.write(`[agent-preset-migration] ${user.userId}: ${migration.from} -> ${migration.to}\n`)
+    } else if (migration.status === 'error') {
+      process.stderr.write(`[agent-preset-migration] ${user.userId}: error ${migration.reason}\n`)
+    }
+  } catch (err) {
+    process.stderr.write(`[agent-preset-migration] ${user.userId}: failed ${String(err)}\n`)
+  }
+
+  // Runtime start / ensureRuntime:启动前重建该用户 Skill 投影,确保首启即见正确 catalog。
+  const __t0 = performance.now()
+  const __skipProjections = process.env.PLATFORM_SKIP_PROJECTIONS === '1'
+  process.stderr.write(`[timing] PROJECTION_SKILL_BEGIN user=${user.userId}\n`)
+  try {
+    if (!__skipProjections) await buildSkillProjection(user.tenantId, user.userId)
   } catch (err) {
     process.stderr.write(`[skill-projection] build failed for ${user.userId}: ${String(err)}\n`)
   }
-  // Runtime start:重建该用户 Knowledge 投影。
+  const __t1 = performance.now()
+  process.stderr.write(`[timing] PROJECTION_SKILL_END duration_ms=${(__t1 - __t0).toFixed(0)}\n`)
+  process.stderr.write(`[timing] PROJECTION_KNOWLEDGE_BEGIN user=${user.userId}\n`)
   try {
-    await knowledgeService.buildProjection(user.userId, user.tenantId)
+    if (!__skipProjections) await knowledgeService.buildProjection(user.userId, user.tenantId)
   } catch (err) {
     process.stderr.write(`[knowledge-projection] build failed for ${user.userId}: ${String(err)}\n`)
   }
-  // Runtime start:重建该用户 Memory 投影,并签发 internal channel ephemeral token。
+  const __t2 = performance.now()
+  process.stderr.write(`[timing] PROJECTION_KNOWLEDGE_END duration_ms=${(__t2 - __t1).toFixed(0)}\n`)
+  process.stderr.write(`[timing] PROJECTION_MEMORY_BEGIN user=${user.userId}\n`)
   try {
-    await memoryService.buildProjection(user.userId, user.tenantId)
+    if (!__skipProjections) await memoryService.buildProjection(user.userId, user.tenantId)
   } catch (err) {
     process.stderr.write(`[memory-projection] build failed for ${user.userId}: ${String(err)}\n`)
   }
+  const __t3 = performance.now()
+  process.stderr.write(`[timing] PROJECTION_MEMORY_END duration_ms=${(__t3 - __t2).toFixed(0)}\n`)
   const memoryToken = issueRuntimeToken(user.userId, user.tenantId)
+  // Runtime start:确保用户默认 Workspace(服务端 provisioning;普通用户无需 native picker)。
+  let defaultWorkspace: { path: string; title: string } | null = null
+  try {
+    defaultWorkspace = await ensureDefaultWorkspace(user.userId, user.tenantId)
+  } catch (err) {
+    process.stderr.write(`[workspace-bootstrap] ensure failed for ${user.userId}: ${String(err)}\n`)
+  }
   // Runtime start:重建该用户 MCP 投影,并解密其 authorized connector 凭据(仅内存)。
   let mcpEntries: McpPatchEntry[] = []
   let mcpSecrets: Record<string, string> = {}
@@ -369,31 +406,58 @@ async function spawnRuntime(user: RuntimeUser): Promise<RuntimeInfo> {
   base.upstreamUrl = `http://127.0.0.1:${port}`
 
   const globalArgs: string[] = []
+  const __t4a = performance.now()
+  process.stderr.write(`[timing] RUNTIME_PATCH_BEGIN user=${user.userId}\n`)
   try {
     const patchPath = await deployPlatformPatch(homeDir, mcpEntries)
     if (patchPath) globalArgs.push('--patch', patchPath)
   } catch { /* 补丁失败不阻塞 */ }
+  const __t4 = performance.now()
+  process.stderr.write(`[timing] RUNTIME_PATCH_END duration_ms=${(__t4 - __t4a).toFixed(0)}\n`)
 
-  const child = spawnDsh(
-    [...globalArgs, '--profile', 'web', '--no-open', '--host', config.dsh.bindHost, '--port', String(port),
-     '--trusted-host', config.dsh.uiAuthority],
-    {
-      cwd: homeDir,
-      env: childEnv(homeDir, workspaceRoot, user, mcpSecrets, memoryToken),
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    },
-  )
+  const spawnArgs = [...globalArgs, '--profile', 'web', '--no-open', '--host', config.dsh.bindHost, '--port', String(port),
+    '--trusted-host', config.dsh.uiAuthority]
+  const childEnvironment = childEnv(homeDir, workspaceRoot, user, mcpSecrets, memoryToken, defaultWorkspace)
+
+  // Guarded diagnostic: dump the exact spawn command + child env (secret values
+  // redacted) so a silent startup hang can be diffed against a manual boot.
+  if (process.env.PLATFORM_DSH_DEBUG_ENV === '1') {
+    const redacted: Record<string, string> = {}
+    for (const [k, v] of Object.entries(childEnvironment)) {
+      redacted[k] = /KEY|TOKEN|SECRET|PASSWORD/i.test(k) ? '[REDACTED]' : (v ?? '')
+    }
+    const { nodeBin, cliEntry, bin } = config.dsh
+    const exe = nodeBin !== '' && cliEntry !== '' ? nodeBin : bin
+    void writeFile(path.join(config.repoRoot, 'var', 'final-e2e', 'dsh-child-env.json'), JSON.stringify({ exe, args: spawnArgs, cwd: homeDir, env: redacted }, null, 2), 'utf8').catch(() => undefined)
+  }
+
+  process.stderr.write(`[timing] PROCESS_SPAWN_BEGIN user=${user.userId}\n`)
+  const child = spawnDsh(spawnArgs, {
+    cwd: homeDir,
+    env: childEnvironment,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+  })
   base.pid = child.pid ?? null
   children.set(user.userId, child)
+  const __t5 = performance.now()
+  process.stderr.write(`[timing] PROCESS_SPAWNED pid=${String(child.pid)}\n`)
 
   return new Promise<RuntimeInfo>((resolve, reject) => {
     let buffer = ''
+    // Bounded combined stdout/stderr tail for startup-failure diagnostics (redacted).
+    let outputTail = ''
+    const pushOutput = (chunk: string): void => {
+      outputTail = (outputTail + chunk).slice(-4000)
+    }
     const timer = setTimeout(() => {
-      reject(new Error('dsh 实例启动超时(未在 30s 内输出 `dsh web:` 行)'))
+      // A timed-out startup must not leak the child (it may hold DSH_HOME locks).
+      try { child.kill() } catch { /* */ }
+      reject(new Error(`dsh 实例启动超时(未在 30s 内输出 \`dsh web:\` 行); output tail: ${redactToken(outputTail).slice(-1200)}`))
     }, 30_000)
 
     const onChunk = (chunk: string): void => {
+      pushOutput(chunk)
       buffer += chunk
       // 0.1.5+ 启动行:`dsh web: http://127.0.0.1:<port>/?token=<launchToken>`
       // 0.1.1  启动行:`dsh web: http://127.0.0.1:<port>`
@@ -417,6 +481,17 @@ async function spawnRuntime(user: RuntimeUser): Promise<RuntimeInfo> {
       base.lastActivity = Date.now()
       registry.set(user.userId, base)
       registerRuntimeRow(base)
+      const __readyMs = performance.now() - __t5
+      process.stderr.write(
+        `[runtime_spawn_trace] user=${user.userId} skip_projections=${__skipProjections ? 1 : 0}` +
+        ` skill_projection_ms=${(__t1 - __t0).toFixed(0)}` +
+        ` knowledge_projection_ms=${(__t2 - __t1).toFixed(0)}` +
+        ` memory_projection_ms=${(__t3 - __t2).toFixed(0)}` +
+        ` patch_ms=${(__t4 - __t3).toFixed(0)}` +
+        ` process_spawn_ms=${(__t5 - __t4).toFixed(0)}` +
+        ` ready_wait_ms=${__readyMs.toFixed(0)}` +
+        ` total_ms=${performance.now() - __t0}\n`,
+      )
       resolve(base)
     }
 
@@ -425,6 +500,7 @@ async function spawnRuntime(user: RuntimeUser): Promise<RuntimeInfo> {
     child.stderr?.setEncoding('utf8')
     child.stderr?.on('data', (chunk: string) => {
       // 子进程 stderr 也可能回显启动 URL,统一脱敏后再落日志。
+      pushOutput(chunk)
       if (chunk.trim() !== '') process.stderr.write(`[dsh:${user.userId}] ${redactToken(chunk)}`)
     })
     child.once('error', (err) => {

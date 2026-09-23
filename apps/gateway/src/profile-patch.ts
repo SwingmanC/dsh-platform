@@ -21,6 +21,8 @@ const PLATFORM_PACKAGES = [
   { name: '@dsh-platform/cmcc-mcp-observer', src: 'packages/cmcc-mcp-observer' },
   // Memory Runtime:Host-only;memory tools + bounded recall + explicit extraction。
   { name: '@dsh-platform/cmcc-memory-runtime', src: 'packages/cmcc-memory-runtime' },
+  // Workspace Bootstrap:Host-only;经官方 workspaceRegistry.create 注册默认工作区。
+  { name: '@dsh-platform/cmcc-workspace-bootstrap', src: 'packages/cmcc-workspace-bootstrap' },
 ] as const
 
 /** YAML 双引号字符串转义(serverName/url 均为已校验的受限字符集)。 */

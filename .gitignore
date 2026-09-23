@@ -8,3 +8,12 @@ coverage/
 var/
 .tools/
 dump.rdb
+
+# prompt packs / working docs (not for repo)
+cmcc-dsh-integration-fix-prompts/
+opencode_prompt_pack/
+opencode_prompt_pack.zip
+
+# ad-hoc E2E / verification harnesses
+scripts/final-e2e/
+scripts/browser-smoke.mjs

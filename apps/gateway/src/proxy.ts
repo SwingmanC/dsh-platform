@@ -7,7 +7,7 @@ import type {
 } from 'fastify'
 import httpProxy from '@fastify/http-proxy'
 import { config } from './config.js'
-import { ensureRuntime } from './supervisor.js'
+import { ensureRuntime, getRuntime } from './supervisor.js'
 import type { RuntimeInfo } from './supervisor.js'
 import { auditRepository } from './repositories/audit-repository.js'
 import { seedUserSessions } from './session-sync.js'
@@ -151,7 +151,15 @@ export function registerDshUiProxy(app: FastifyInstance, sessions: SessionServic
     }
     const principal = session.principal
     try {
+      const __t0 = performance.now()
+      const __preExisting = getRuntime(principal.userId)
+      const __wasReady = __preExisting !== undefined && __preExisting.state === 'ready'
+      app.log.info(`[timing] RUNTIME_ENSURE_BEGIN user=${principal.userId} preState=${__wasReady ? 'ready' : (__preExisting !== undefined ? __preExisting.state : 'absent')}`)
       const runtime = await ensureRuntime(principal)
+      const __waitMs = Math.round(performance.now() - __t0)
+      const __state = __wasReady ? 'hit' : (__waitMs > 50 ? 'wait' : 'spawn')
+      app.log.info(`[timing] RUNTIME_ENSURE_HIT resolved=${__state === 'hit'}`)
+      app.log.info(`[timing] BACKEND_RECEIVE path=${requestPath(req)} ensureRuntime_state=${__state} waitMs=${__waitMs}`)
       req.platformRuntime = runtime
       req.principal = principal
       void seedUserSessions(principal.userId, principal.tenantId)
@@ -196,8 +204,14 @@ export function registerDshUiProxy(app: FastifyInstance, sessions: SessionServic
         upstreamHeaders(headers),
     },
     wsClientOptions: {
-      rewriteRequestHeaders: (headers: IncomingHttpHeaders, _req: ProxyRequest): IncomingHttpHeaders =>
-        upstreamHeaders(headers),
+      /**
+       * WS 上游握手头:`@fastify/http-proxy` 的 WS 版 `rewriteRequestHeaders(headers, request)`
+       * 第一个参数是默认头对象(`wsClientOptions.headers`,通常为 `{}`),**不是**客户端请求头。
+       * 必须从 `request.headers` 取客户端头(Origin / Cookie / Sec-WebSocket-*)并覆写 Host,
+       * 否则 dsh 因缺少 Origin/会话 cookie 对 WS 升级返回非 101 → 代理以 1011 关闭。
+       */
+      rewriteRequestHeaders: (_headers: IncomingHttpHeaders, req: ProxyRequest): IncomingHttpHeaders =>
+        upstreamHeaders(req.headers),
     },
   })
 }

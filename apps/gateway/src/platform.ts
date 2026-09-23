@@ -132,6 +132,25 @@ export async function recreateWorkspace(userId: string, tenantId: string, canoni
   )
 }
 
+/** 默认工作区展示标题。 */
+export const DEFAULT_WORKSPACE_TITLE = '我的工作区'
+
+/**
+ * 确保用户的默认工作区存在并登记(幂等)。普通用户首次访问/冷启动/重启/idle 后
+ * 自动 provisioning,使其无需依赖 host OS native directory picker 即可开始对话。
+ *
+ * - 路径由服务端按 tenant/user 生成,不接受请求指定。
+ * - 目录真实创建;越界校验。
+ * - 平台 DB 行幂等登记(`registerWorkspace`)。
+ */
+export async function ensureDefaultWorkspace(userId: string, tenantId: string): Promise<{ path: string; title: string }> {
+  const dir = path.join(userWorkspaceRoot(userId, tenantId), 'default')
+  if (!isWithinUserRoot(userId, tenantId, dir)) throw new Error('outside-root')
+  await mkdir(dir, { recursive: true })
+  await registerWorkspace(userId, dir, DEFAULT_WORKSPACE_TITLE)
+  return { path: dir, title: DEFAULT_WORKSPACE_TITLE }
+}
+
 export async function listSessions(userId: string): Promise<SessionListItem[]> {
   return queryMany<SessionListItem>(
     `SELECT session_id AS sessionId, title, workspace_id AS workspaceId, workspace,
