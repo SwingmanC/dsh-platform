@@ -79,6 +79,13 @@ export interface MemoryRuntimeStatus {
   teamRuntime: boolean
 }
 
+export interface UsageSummary {
+  totals: { requests: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; reasoningTokens: number }
+  daily: Array<{ day: string; requests: number; inputTokens: number; outputTokens: number }>
+  users: Array<{ userId: string; displayName: string; requests: number; inputTokens: number; outputTokens: number }>
+  models: Array<{ provider: string; model: string; requests: number; inputTokens: number; outputTokens: number }>
+}
+
 /** 归一化 API 错误。 */
 export class PlatformApiError extends Error {
   constructor(readonly status: number, readonly code: string) {
@@ -185,6 +192,14 @@ export class PlatformApiClient {
     const headers: Record<string, string> = { 'x-csrf-token': csrfToken() }
     if (body !== undefined) headers['content-type'] = 'application/json'
     return this.request<T>(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
+  }
+
+  getCurrentUser(): Promise<{ role: 'tenant_admin' | 'operator' | 'member' }> {
+    return this.request('/auth/me')
+  }
+
+  getUsageSummary(days: 7 | 30 | 90 = 30): Promise<UsageSummary> {
+    return this.request<UsageSummary>(`/api/usage/summary?days=${days}`)
   }
 
   // --- Skills ---

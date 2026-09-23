@@ -36,6 +36,15 @@ test('listSkills: GET /api/skills with query + credentials include', async () =>
   assert.equal(calls[0].init?.credentials, 'include')
 })
 
+test('usage: current role and summary use authenticated GET requests', async () => {
+  const { fetchImpl, calls } = mockFetch((url) => ({ body: url === '/auth/me' ? { role: 'tenant_admin' } : { totals: { requests: 0 }, daily: [], users: [], models: [] } }))
+  const api = new PlatformApiClient(fetchImpl)
+  assert.equal((await api.getCurrentUser()).role, 'tenant_admin')
+  assert.equal((await api.getUsageSummary(7)).totals.requests, 0)
+  assert.deepEqual(calls.map((call) => call.url), ['/auth/me', '/api/usage/summary?days=7'])
+  assert.ok(calls.every((call) => call.init?.credentials === 'include'))
+})
+
 test('createSkill: POST + CSRF header + JSON body', async () => {
   globalThis.document = { cookie: 'csrf_token=tok-123' }
   const { fetchImpl, calls } = mockFetch(() => ({ status: 201, body: { id: 's1', name: 'x' } }))

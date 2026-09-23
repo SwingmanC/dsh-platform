@@ -13,6 +13,7 @@ import { SkillsPage } from './pages/SkillsPage.js'
 import { KnowledgePage } from './pages/KnowledgePage.js'
 import { McpPage } from './pages/McpPage.js'
 import { MemoryPage } from './pages/MemoryPage.js'
+import { UsagePage } from './pages/UsagePage.js'
 import './styles/tokens.css'
 
 interface CurrentUser {
@@ -106,6 +107,7 @@ function renderPage(path: string, user: CurrentUser, navigate: (p: string) => vo
     case '/knowledge': return <KnowledgePage />
     case '/mcp': return <McpPage />
     case '/memory': return <MemoryPage />
+    case '/usage': return user.role === 'tenant_admin' ? <UsagePage /> : <DashboardPage displayName={user.displayName} onNavigate={navigate} />
     default: return <DashboardPage displayName={user.displayName} onNavigate={navigate} />
   }
 }

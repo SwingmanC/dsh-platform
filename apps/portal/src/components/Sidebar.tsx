@@ -77,7 +77,13 @@ export function Sidebar({ role, currentPath, onNavigate }: {
         {isAdmin && (
           <div style={{ marginTop: '8px' }}>
             <div style={{ padding: '10px 20px 4px', fontSize: '11px', color: 'var(--cmcc-text-secondary)', fontWeight: 500 }}>管理</div>
-            <div style={{ padding: '9px 20px', fontSize: '13px', color: 'var(--cmcc-text-secondary)' }}>团队 / 配额 / 审计(规划中)</div>
+            <button onClick={() => onNavigate('/usage')} style={{
+              display: 'block', width: '100%', padding: '9px 20px', textAlign: 'left',
+              background: currentPath === '/usage' ? 'var(--cmcc-primary-soft)' : 'transparent',
+              color: currentPath === '/usage' ? 'var(--cmcc-primary)' : 'var(--cmcc-text)', border: 'none',
+              borderRight: currentPath === '/usage' ? '3px solid var(--cmcc-primary)' : '3px solid transparent', fontSize: '14px',
+            }}>用量统计</button>
+            <div style={{ padding: '9px 20px', fontSize: '13px', color: 'var(--cmcc-text-secondary)' }}>团队 / 配额 / 审计（规划中）</div>
           </div>
         )}
       </nav>

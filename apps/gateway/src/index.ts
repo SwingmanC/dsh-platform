@@ -12,6 +12,7 @@ import { registerMemoryRoutes } from './routes/memory.js'
 import { registerSkillRoutes } from './routes/skills.js'
 import { registerKnowledgeRoutes } from './routes/knowledge.js'
 import { registerMCPRoutes } from './routes/mcp.js'
+import { registerUsageRoutes } from './routes/usage.js'
 import { ensureRuntime, shutdownRuntimes, startIdleReaper, probeDshLauncher } from './supervisor.js'
 
 const app = Fastify({
@@ -61,6 +62,7 @@ const PLATFORM_API_PATTERNS: readonly RegExp[] = [
   /^\/api\/memory$/,
   /^\/api\/memory\/namespaces$/,
   /^\/api\/memory\/runtime-status$/,
+  /^\/api\/usage\/summary$/,
   new RegExp(`^/api/memory/${UUID}(/promote)?$`),
 ]
 
@@ -100,6 +102,7 @@ registerMemoryRoutes(app)
 registerSkillRoutes(app)
 registerKnowledgeRoutes(app)
 registerMCPRoutes(app)
+registerUsageRoutes(app)
 
 app.post('/api/runtimes/ensure', async (req, reply) => {
   if (!req.principal) {

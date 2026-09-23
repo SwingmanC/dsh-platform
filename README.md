@@ -51,6 +51,16 @@ pnpm dev:portal                       # 平台首页:http://127.0.0.1:5173(dev �
 
 `GET /api/health` 返回 `{ ok, db }`,可同时验证网关与 MySQL 连通。
 
+已有数据库升级到用量统计版本时执行一次：
+
+```sh
+mysql --default-character-set=utf8mb4 -h127.0.0.1 -P3306 -uroot -p < db/migrations/008-usage-events.sql
+```
+
+租户管理员登录后进入 DSH 界面，在「我的记忆」下方的「用量统计」查看最近 7/30/90 天的请求数、
+Token 趋势以及人员/模型分布；普通用户不显示该入口。数据由每用户 DSH Runtime 插件采集并经短期
+Runtime Token 上报；插件不直连平台数据库。
+
 ### 开发账号(T1)
 
 种子数据内置开发管理员(**仅本地,生产必须改密或走 OIDC**):
