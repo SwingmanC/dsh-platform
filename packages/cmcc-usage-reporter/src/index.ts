@@ -2,14 +2,14 @@
  * Runtime 侧只采集 DSH 持久事件中的权威 usage，并通过短期 Runtime Token 上报。
  * 不读取租户/用户参数、不访问平台数据库、不计算费用。
  */
+import path from 'node:path'
+import { UsageSpool } from './spool.js'
+import type { UsagePayload } from './spool.js'
+
 export const name = 'cmcc-usage-reporter'
 
 interface SessionLike { id?: string }
 interface SessionEventLike { type?: string; seq?: number; time?: number; data?: unknown }
-interface UsagePayload {
-  sessionId: string; eventSeq: number; occurredAt: string; provider: string; model: string
-  inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; reasoningTokens: number
-}
 interface PluginContext {
   on(event: string, listener: (session: SessionLike, event: SessionEventLike) => void): (() => void) | void
 }
@@ -48,20 +48,18 @@ export function usageFromEvent(session: SessionLike, event: SessionEventLike): U
     provider, model, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, reasoningTokens }
 }
 
-async function report(url: string, token: string, payload: UsagePayload): Promise<void> {
-  try {
-    await fetch(`${url}/internal/usage/events`, { method: 'POST', headers: {
-      'content-type': 'application/json', 'x-runtime-token': token,
-    }, body: JSON.stringify(payload) })
-  } catch { /* 统计失败不能影响 Agent 主链路；持久补偿留给后续 telemetry spool。 */ }
-}
-
 export function apply(ctx: PluginContext): void {
   const url = process.env.PLATFORM_INTERNAL_URL ?? ''
   const token = process.env.PLATFORM_INTERNAL_TOKEN ?? ''
-  if (url === '' || token === '') return
+  if (url === '' || token === '') {
+    process.stderr.write('[cmcc-usage-reporter] 内部上报通道未配置，用量将暂存本地\n')
+  }
+  const spool = new UsageSpool(path.join(process.env.DSH_HOME ?? process.cwd(), 'usage-spool'), url, token)
+  spool.start()
   ctx.on('session/event', (session, event) => {
     const payload = usageFromEvent(session, event)
-    if (payload) void report(url, token, payload)
+    if (payload) void spool.enqueue(payload).catch((error: unknown) => {
+      process.stderr.write(`[cmcc-usage-reporter] 用量落盘失败，无法上报：${error instanceof Error ? error.message : 'unknown'}\n`)
+    })
   })
 }

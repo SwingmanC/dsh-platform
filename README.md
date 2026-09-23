@@ -61,6 +61,8 @@ mysql --default-character-set=utf8mb4 -h127.0.0.1 -P3306 -uroot -p < db/migratio
 Token 趋势以及人员/模型分布；普通用户不显示该入口。数据由每用户 DSH Runtime 插件采集并经短期
 Runtime Token 上报；插件不直连平台数据库。
 
+用量上报采用 `${DSH_HOME}/usage-spool` 本地持久队列：网关返回成功后才移除事件；网络故障、缺少通道配置或服务端故障会记录日志并保留重试（每 15 秒，单次请求 5 秒超时）。网关重启后旧 Runtime 的临时 token 会失效，需重启该 Runtime 换取新 token，待报事件会在启动时补发；400/422 错误事件保留为 `.rejected` 文件供排查，不自动丢弃。
+
 ### 开发账号(T1)
 
 种子数据内置开发管理员(**仅本地,生产必须改密或走 OIDC**):
