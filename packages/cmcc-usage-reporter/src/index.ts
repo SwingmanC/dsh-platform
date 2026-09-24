@@ -77,7 +77,10 @@ export function usageFromEvent(session: SessionLike, event: SessionEventLike, cu
     occurredAt: new Date(typeof event.time === 'number' ? event.time : Date.now()).toISOString(),
     provider, model, eventType: event.type === 'assistant/message' ? 'message' : 'attempt',
     turn: location(data?.turn), step: location(data?.step), usageKnown: usage !== undefined,
-    inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, reasoningTokens }
+    inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, reasoningTokens,
+    cacheReadKnown: usage?.cacheReadTokens !== undefined,
+    cacheWriteKnown: usage?.cacheWriteTokens !== undefined,
+    reasoningKnown: usage?.reasoningTokens !== undefined }
 }
 
 export class UsageCollector {

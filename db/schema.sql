@@ -136,7 +136,7 @@ CREATE TABLE t_dsh_usage_counters (
   day           DATE          NOT NULL,
   tokens_in     BIGINT        NOT NULL DEFAULT 0,
   tokens_out    BIGINT        NOT NULL DEFAULT 0,
-  requests      BIGINT        NOT NULL DEFAULT 0,
+  attempts      BIGINT        NOT NULL DEFAULT 0,
   PRIMARY KEY (tenant_id, day)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -154,6 +154,9 @@ CREATE TABLE t_dsh_usage_events (
   turn_no          BIGINT        NULL,
   step_no          BIGINT        NULL,
   usage_known      TINYINT(1)    NOT NULL DEFAULT 1,
+  cache_read_known TINYINT(1)    NOT NULL DEFAULT 0,
+  cache_write_known TINYINT(1)   NOT NULL DEFAULT 0,
+  reasoning_known TINYINT(1)     NOT NULL DEFAULT 0,
   input_tokens     BIGINT        NOT NULL DEFAULT 0,
   output_tokens    BIGINT        NOT NULL DEFAULT 0,
   cache_read_tokens BIGINT       NOT NULL DEFAULT 0,

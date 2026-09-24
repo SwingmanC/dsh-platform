@@ -26,10 +26,18 @@ export function registerUsageRoutes(app: FastifyInstance): void {
     const step = rawStep === undefined || rawStep === null ? null : count(rawStep)
     const usageKnown = body?.usageKnown === undefined ? true : body.usageKnown
     const fields = [body?.inputTokens, body?.outputTokens, body?.cacheReadTokens, body?.cacheWriteTokens, body?.reasoningTokens].map(count)
+    // 旧版待补报文件没有 presence 字段；只有非零值能证明该项曾被上报。
+    const cacheReadKnown = body?.cacheReadKnown === undefined ? (fields[2] ?? 0) > 0 : body.cacheReadKnown
+    const cacheWriteKnown = body?.cacheWriteKnown === undefined ? (fields[3] ?? 0) > 0 : body.cacheWriteKnown
+    const reasoningKnown = body?.reasoningKnown === undefined ? (fields[4] ?? 0) > 0 : body.reasoningKnown
     const occurredAt = typeof body?.occurredAt === 'string' ? new Date(body.occurredAt) : new Date(NaN)
     if (sessionId === '' || sessionId.length > 128 || eventSeq === null || fields.some((v) => v === null) || Number.isNaN(occurredAt.valueOf())
       || (eventType !== 'message' && eventType !== 'attempt') || (rawTurn != null && turn === null)
-      || (rawStep != null && step === null) || typeof usageKnown !== 'boolean') {
+      || (rawStep != null && step === null) || typeof usageKnown !== 'boolean'
+      || typeof cacheReadKnown !== 'boolean' || typeof cacheWriteKnown !== 'boolean' || typeof reasoningKnown !== 'boolean'
+      || (!usageKnown && (cacheReadKnown || cacheWriteKnown || reasoningKnown))
+      || (!cacheReadKnown && (fields[2] ?? 0) > 0) || (!cacheWriteKnown && (fields[3] ?? 0) > 0)
+      || (!reasoningKnown && (fields[4] ?? 0) > 0)) {
       return reply.code(400).send({ error: 'invalid-usage-event' })
     }
     const inputTokens = fields[0] as number
@@ -39,7 +47,7 @@ export function registerUsageRoutes(app: FastifyInstance): void {
     const reasoningTokens = fields[4] as number
     const eventKey = `${identity.userId}:${sessionId}:${eventSeq}`
     const inserted = await usageRepository.record({ eventKey, ...identity, sessionId, eventSeq, provider, model,
-      eventType, turn, step, usageKnown,
+      eventType, turn, step, usageKnown, cacheReadKnown, cacheWriteKnown, reasoningKnown,
       inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens, reasoningTokens, occurredAt })
     return reply.code(inserted ? 201 : 200).send({ ok: true, duplicate: !inserted })
   })

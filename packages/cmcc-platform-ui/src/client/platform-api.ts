@@ -79,11 +79,17 @@ export interface MemoryRuntimeStatus {
   teamRuntime: boolean
 }
 
+export interface UsageCounts {
+  attempts: number; nonSurfaceAttempts: number; unknownUsageAttempts: number
+  inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; reasoningTokens: number
+  cacheReadKnownAttempts: number; cacheWriteKnownAttempts: number; reasoningKnownAttempts: number
+}
+
 export interface UsageSummary {
-  totals: { requests: number; attempts: number; nonSurfaceAttempts: number; unknownUsageAttempts: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; reasoningTokens: number }
-  daily: Array<{ day: string; requests: number; attempts: number; inputTokens: number; outputTokens: number }>
-  users: Array<{ userId: string; displayName: string; requests: number; attempts: number; inputTokens: number; outputTokens: number }>
-  models: Array<{ provider: string; model: string; attempts: number; inputTokens: number; outputTokens: number }>
+  totals: UsageCounts & { turns: number }
+  daily: Array<UsageCounts & { day: string; turns: number }>
+  users: Array<UsageCounts & { userId: string; displayName: string; turns: number }>
+  models: Array<UsageCounts & { provider: string; model: string }>
 }
 
 /** 归一化 API 错误。 */

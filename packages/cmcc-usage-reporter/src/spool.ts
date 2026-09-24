@@ -6,6 +6,7 @@ export interface UsagePayload {
   sessionId: string; eventSeq: number; occurredAt: string; provider: string; model: string
   eventType: 'message' | 'attempt'; turn: number | null; step: number | null; usageKnown: boolean
   inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; reasoningTokens: number
+  cacheReadKnown: boolean; cacheWriteKnown: boolean; reasoningKnown: boolean
 }
 
 const RETRY_MS = 15_000

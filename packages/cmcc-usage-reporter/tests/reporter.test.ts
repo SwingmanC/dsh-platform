@@ -9,6 +9,7 @@ test('extracts authoritative assistant usage', () => {
     } } })
   assert.deepEqual(result, { sessionId: 'session-1', eventSeq: 7, occurredAt: '2023-11-14T22:13:20.000Z',
     provider: 'deepseek', model: 'deepseek-chat', eventType: 'message', turn: null, step: null, usageKnown: true,
+    cacheReadKnown: true, cacheWriteKnown: true, reasoningKnown: true,
     inputTokens: 100, outputTokens: 20,
     cacheReadTokens: 30, cacheWriteTokens: 4, reasoningTokens: 2 })
 })
@@ -21,6 +22,19 @@ test('reads provider and model from DSH assistant message source', () => {
   assert.equal(result?.model, 'deepseek-flash')
   assert.equal(result?.inputTokens, 8853)
   assert.equal(result?.outputTokens, 167)
+  assert.equal(result?.cacheReadKnown, false)
+  assert.equal(result?.reasoningKnown, true)
+})
+
+test('distinguishes an explicitly reported zero cache value from an absent field', () => {
+  const reportedZero = usageFromEvent({ id: 's' }, { type: 'assistant/message', seq: 1,
+    data: { usage: { inputTokens: 10, outputTokens: 2, cacheReadTokens: 0 } } })
+  const absent = usageFromEvent({ id: 's' }, { type: 'assistant/message', seq: 2,
+    data: { usage: { inputTokens: 10, outputTokens: 2 } } })
+  assert.equal(reportedZero?.cacheReadKnown, true)
+  assert.equal(absent?.cacheReadKnown, false)
+  assert.equal(reportedZero?.cacheReadTokens, 0)
+  assert.equal(absent?.cacheReadTokens, 0)
 })
 
 test('model source takes precedence over legacy top-level fields', () => {

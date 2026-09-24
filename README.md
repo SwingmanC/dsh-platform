@@ -56,6 +56,8 @@ pnpm dev:portal                       # 平台首页:http://127.0.0.1:5173(dev �
 ```sh
 mysql --default-character-set=utf8mb4 -h127.0.0.1 -P3306 -uroot -p < db/migrations/008-usage-events.sql
 mysql --default-character-set=utf8mb4 -h127.0.0.1 -P3306 -uroot -p < db/migrations/009-usage-attempts.sql
+mysql --default-character-set=utf8mb4 -h127.0.0.1 -P3306 -uroot -p < db/migrations/010-usage-field-presence.sql
+mysql --default-character-set=utf8mb4 -h127.0.0.1 -P3306 -uroot -p < db/migrations/011-usage-counter-attempts.sql
 ```
 
 租户管理员登录后进入 DSH 界面，在「我的记忆」下方的「用量统计」查看最近 7/30/90 天的模型调用轮次、实际尝试次数、
@@ -63,6 +65,8 @@ Token 趋势以及人员/模型分布；普通用户不显示该入口。数据�
 Runtime Token 上报；插件不直连平台数据库。
 
 未形成最终消息的失败、重试或中断尝试按 DSH 持久 `assistant/attempt.stream` 中最后一条权威 usage 计入；有消息的调用使用 `assistant/message.usage`，包括已中断消息。没有 usage 的尝试只计次数并显示“用量未知”，不估算 Token。一次调用轮次按用户、会话、turn 去重；旧版明细没有 turn 信息，只能按单条记录近似。历史漏采尝试不会因升级自动补齐，需另行从仍保留的 DSH 会话日志回填。
+
+Token 口径：输入由未缓存输入、缓存读取、缓存写入三项组成；输出单列，推理 Token 是输出的细分，不重复加总。页面展示各缓存项的已知数值和上报覆盖次数；缺失字段不解释为零。“已记录合计”只加总有权威记录的字段，字段缺失时可能低于实际消耗。历史零值无法还原为“真实零”或“未上报”，按未确认处理。
 
 用量上报采用 `${DSH_HOME}/usage-spool` 本地持久队列：网关返回成功后才移除事件；网络故障、缺少通道配置或服务端故障会记录日志并保留重试（每 15 秒，单次请求 5 秒超时）。网关重启后旧 Runtime 的临时 token 会失效，需重启该 Runtime 换取新 token，待报事件会在启动时补发；400/422 错误事件保留为 `.rejected` 文件供排查，不自动丢弃。
 
