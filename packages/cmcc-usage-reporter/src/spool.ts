@@ -4,6 +4,7 @@ import path from 'node:path'
 
 export interface UsagePayload {
   sessionId: string; eventSeq: number; occurredAt: string; provider: string; model: string
+  eventType: 'message' | 'attempt'; turn: number | null; step: number | null; usageKnown: boolean
   inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; reasoningTokens: number
 }
 

@@ -80,10 +80,10 @@ export interface MemoryRuntimeStatus {
 }
 
 export interface UsageSummary {
-  totals: { requests: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; reasoningTokens: number }
-  daily: Array<{ day: string; requests: number; inputTokens: number; outputTokens: number }>
-  users: Array<{ userId: string; displayName: string; requests: number; inputTokens: number; outputTokens: number }>
-  models: Array<{ provider: string; model: string; requests: number; inputTokens: number; outputTokens: number }>
+  totals: { requests: number; attempts: number; nonSurfaceAttempts: number; unknownUsageAttempts: number; inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheWriteTokens: number; reasoningTokens: number }
+  daily: Array<{ day: string; requests: number; attempts: number; inputTokens: number; outputTokens: number }>
+  users: Array<{ userId: string; displayName: string; requests: number; attempts: number; inputTokens: number; outputTokens: number }>
+  models: Array<{ provider: string; model: string; attempts: number; inputTokens: number; outputTokens: number }>
 }
 
 /** 归一化 API 错误。 */

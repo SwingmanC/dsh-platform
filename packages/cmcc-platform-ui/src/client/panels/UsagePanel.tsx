@@ -49,16 +49,20 @@ function UsageContent({ data }: { data: UsageSummary }): React.ReactElement {
   const input = data.totals.inputTokens + data.totals.cacheReadTokens + data.totals.cacheWriteTokens
   return <>
     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10, marginBottom: 16 }}>
-      <Metric label="模型请求" value={data.totals.requests} />
+      <Metric label="模型调用轮次" value={data.totals.requests} hint="同一轮的重试只算一次" />
+      <Metric label="模型尝试记录" value={data.totals.attempts} hint={`其中 ${fmt.format(data.totals.nonSurfaceAttempts)} 次未生成最终消息`} />
       <Metric label="输入 Token" value={input} hint="含缓存读写" />
       <Metric label="输出 Token" value={data.totals.outputTokens} />
       <Metric label="推理 Token" value={data.totals.reasoningTokens} />
     </div>
+    {data.totals.unknownUsageAttempts > 0 && <p role="status" style={{ margin: '0 0 12px', fontSize: 12, color: 'var(--dsw-alias-label-secondary, #5b6473)' }}>
+      {fmt.format(data.totals.unknownUsageAttempts)} 次模型尝试没有权威 Token 数据；已计入尝试次数，Token 未估算。
+    </p>}
     {data.daily.length === 0 ? <PanelEmpty text="暂无用量数据" hint="完成一次模型调用后，这里将显示统计。" /> : <>
       <Section title="每日趋势"><DailyBars rows={data.daily} /></Section>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
-        <Section title="人员用量"><UsageTable headers={['人员', '请求', 'Token']} rows={data.users.map((user) => [user.displayName, fmt.format(user.requests), fmt.format(user.inputTokens + user.outputTokens)])} /></Section>
-        <Section title="模型用量"><UsageTable headers={['模型', '请求', 'Token']} rows={data.models.map((model) => [`${model.provider} / ${model.model}`, fmt.format(model.requests), fmt.format(model.inputTokens + model.outputTokens)])} /></Section>
+        <Section title="人员用量"><UsageTable headers={['人员', '轮次', '尝试', 'Token']} rows={data.users.map((user) => [user.displayName, fmt.format(user.requests), fmt.format(user.attempts), fmt.format(user.inputTokens + user.outputTokens)])} /></Section>
+        <Section title="模型用量"><UsageTable headers={['模型', '尝试', 'Token']} rows={data.models.map((model) => [`${model.provider} / ${model.model}`, fmt.format(model.attempts), fmt.format(model.inputTokens + model.outputTokens)])} /></Section>
       </div>
     </>}
   </>

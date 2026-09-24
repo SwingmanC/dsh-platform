@@ -9,6 +9,7 @@ import type { UsagePayload } from '../src/spool.js'
 const payload: UsagePayload = {
   sessionId: 'session-1', eventSeq: 7, occurredAt: '2026-09-23T08:00:00.000Z',
   provider: 'deepseek-official', model: 'deepseek-flash', inputTokens: 100, outputTokens: 20,
+  eventType: 'message', turn: 1, step: 1, usageKnown: true,
   cacheReadTokens: 10, cacheWriteTokens: 0, reasoningTokens: 5,
 }
 
