@@ -13,7 +13,7 @@ DeepSeek Harness(dsh)的多租户平台层:**网关/BFF + 每用户一个 dsh �
 ```
 apps/
   gateway/    Fastify 网关:认证(sid cookie)、反代、Supervisor、MySQL、多租户 API
-  portal/     Vite + React 中国移动品牌 SPA:登录页、Dashboard、Memory、导航
+  portal/     Vite + React 中国移动品牌登录页；登录后直接进入 DSH
 packages/
   shared/     跨端共享类型:表实体镜像、DTO、TenantContext、Memory/Skill/Knowledge/MCP 类型
   sdk-driver/ 每用户 dsh 运行时驱动骨架(包装 @deepseek-ai/dsh-sdk-client)
@@ -46,7 +46,7 @@ pnpm install                          # 安装依赖
 cp .env.example .env                  # 按需修改 MySQL 连接
 pnpm db:init                          # 建库建表(会提示输入 MySQL root 密码)
 pnpm dev:gateway                      # 网关:http://127.0.0.1:8080
-pnpm dev:portal                       # 平台首页:http://127.0.0.1:5173(dev 代理 /api /auth /app 到网关)
+pnpm dev:portal                       # 登录页:http://127.0.0.1:5173(dev 代理 /api /auth /app 到网关)
 ```
 
 `GET /api/health` 返回 `{ ok, db }`,可同时验证网关与 MySQL 连通。
@@ -103,7 +103,7 @@ pnpm --filter @dsh-platform/gateway hash-password <新密码>
 2. **前端使用根绝对路径**(`/assets`、`/plugins`、`/api`),**无法挂在 `/app/*` 子路径下**。故 dsh UI 挂在**专属 authority**的根路径,网关按 `Host` 路由:
 
 ```
-平台首页  http://localhost:5173        (/api、/auth 归网关)
+平台登录页 http://localhost:5173       (/api、/auth 归网关)
 dsh UI    http://localhost:8080/       根路径整体代理到该用户实例
 ```
 
