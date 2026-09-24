@@ -23,6 +23,8 @@ const PLATFORM_PACKAGES = [
   { name: '@dsh-platform/cmcc-memory-runtime', src: 'packages/cmcc-memory-runtime' },
   // Workspace Bootstrap:Host-only;经官方 workspaceRegistry.create 注册默认工作区。
   { name: '@dsh-platform/cmcc-workspace-bootstrap', src: 'packages/cmcc-workspace-bootstrap' },
+  // Usage:Host-only;监听模型调用权威 usage，经 Runtime Token 上报平台。
+  { name: '@dsh-platform/cmcc-usage-reporter', src: 'packages/cmcc-usage-reporter' },
 ] as const
 
 /** YAML 双引号字符串转义(serverName/url 均为已校验的受限字符集)。 */

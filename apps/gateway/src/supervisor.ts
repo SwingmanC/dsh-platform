@@ -138,6 +138,9 @@ function childEnv(homeDir: string, workspaceRoot: string, user: RuntimeUser, mcp
   env.PLATFORM_MEMORY_PROJECTION_DIR = memoryProjectionDir(user.tenantId, user.userId)
   env.PLATFORM_MEMORY_INTERNAL_URL = `http://127.0.0.1:${config.port}`
   env.PLATFORM_MEMORY_INTERNAL_TOKEN = memoryToken
+  // 通用 Runtime → Gateway 内部通道；身份只由短期 token 推导。
+  env.PLATFORM_INTERNAL_URL = `http://127.0.0.1:${config.port}`
+  env.PLATFORM_INTERNAL_TOKEN = memoryToken
   env.PLATFORM_MEMORY_MAX_RECALL_ITEMS = String(config.memory.maxRecallItems)
   env.PLATFORM_MEMORY_MAX_RECALL_BYTES = String(config.memory.maxRecallBytes)
   env.PLATFORM_MEMORY_MAX_ITEM_BYTES = String(config.memory.maxItemBytes)

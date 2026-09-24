@@ -9,8 +9,9 @@ import { SkillPanel } from './SkillPanel.js'
 import { KnowledgePanel } from './KnowledgePanel.js'
 import { McpPanel } from './McpPanel.js'
 import { MemoryPanel } from './MemoryPanel.js'
+import { UsagePanel } from './UsagePanel.js'
 
-export type PanelId = 'cmcc.skills' | 'cmcc.knowledge' | 'cmcc.mcp' | 'cmcc.memory'
+export type PanelId = 'cmcc.skills' | 'cmcc.knowledge' | 'cmcc.mcp' | 'cmcc.memory' | 'cmcc.usage'
 
 export interface PanelDef {
   id: PanelId
@@ -18,6 +19,7 @@ export interface PanelDef {
   order: number
   Icon: (props: { size?: number; active?: boolean }) => React.ReactElement
   Component: () => React.ReactElement
+  adminOnly?: boolean
 }
 
 function icon(path: React.ReactNode): (props: { size?: number; active?: boolean }) => React.ReactElement {
@@ -64,9 +66,17 @@ const MemoryIcon = icon(
   </>,
 )
 
+const UsageIcon = icon(
+  <>
+    <path d="M4 20V11M10 20V5M16 20v-8M22 20V8" />
+    <path d="M2 20h20" />
+  </>,
+)
+
 export const PANELS: readonly PanelDef[] = [
   { id: 'cmcc.skills', label: '技能广场', order: 100, Icon: SkillsIcon, Component: SkillPanel },
   { id: 'cmcc.knowledge', label: '知识中心', order: 110, Icon: KnowledgeIcon, Component: KnowledgePanel },
   { id: 'cmcc.mcp', label: 'MCP 服务', order: 120, Icon: McpIcon, Component: McpPanel },
   { id: 'cmcc.memory', label: '我的记忆', order: 130, Icon: MemoryIcon, Component: MemoryPanel },
+  { id: 'cmcc.usage', label: '用量统计', order: 140, Icon: UsageIcon, Component: UsagePanel, adminOnly: true },
 ]

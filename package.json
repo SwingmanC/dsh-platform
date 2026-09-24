@@ -6,7 +6,7 @@
   "packageManager": "pnpm@11.7.0",
   "description": "DeepSeek Harness 多租户平台:网关/BFF + 每用户 dsh 运行时编排(设计文档见 docs/design/)",
   "scripts": {
-    "dev:gateway": "pnpm --filter @dsh-platform/shared build && pnpm --filter @dsh-platform/gateway dev",
+    "dev:gateway": "pnpm --filter @dsh-platform/shared build && pnpm --filter @dsh-platform/cmcc-platform-ui build && pnpm --filter @dsh-platform/cmcc-usage-reporter build && pnpm --filter @dsh-platform/gateway dev",
     "dev:portal": "pnpm --filter @dsh-platform/shared build && pnpm --filter @dsh-platform/portal dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r build && pnpm -r typecheck",

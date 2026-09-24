@@ -13,7 +13,7 @@ DeepSeek Harness(dsh)的多租户平台层:**网关/BFF + 每用户一个 dsh �
 ```
 apps/
   gateway/    Fastify 网关:认证(sid cookie)、反代、Supervisor、MySQL、多租户 API
-  portal/     Vite + React 中国移动品牌 SPA:登录页、Dashboard、Memory、导航
+  portal/     Vite + React 中国移动品牌登录页；登录后直接进入 DSH
 packages/
   shared/     跨端共享类型:表实体镜像、DTO、TenantContext、Memory/Skill/Knowledge/MCP 类型
   sdk-driver/ 每用户 dsh 运行时驱动骨架(包装 @deepseek-ai/dsh-sdk-client)
@@ -46,10 +46,29 @@ pnpm install                          # 安装依赖
 cp .env.example .env                  # 按需修改 MySQL 连接
 pnpm db:init                          # 建库建表(会提示输入 MySQL root 密码)
 pnpm dev:gateway                      # 网关:http://127.0.0.1:8080
-pnpm dev:portal                       # 平台首页:http://127.0.0.1:5173(dev 代理 /api /auth /app 到网关)
+pnpm dev:portal                       # 登录页:http://127.0.0.1:5173(dev 代理 /api /auth /app 到网关)
 ```
 
 `GET /api/health` 返回 `{ ok, db }`,可同时验证网关与 MySQL 连通。
+
+已有数据库升级到用量统计版本时执行一次：
+
+```sh
+mysql --default-character-set=utf8mb4 -h127.0.0.1 -P3306 -uroot -p < db/migrations/008-usage-events.sql
+mysql --default-character-set=utf8mb4 -h127.0.0.1 -P3306 -uroot -p < db/migrations/009-usage-attempts.sql
+mysql --default-character-set=utf8mb4 -h127.0.0.1 -P3306 -uroot -p < db/migrations/010-usage-field-presence.sql
+mysql --default-character-set=utf8mb4 -h127.0.0.1 -P3306 -uroot -p < db/migrations/011-usage-counter-attempts.sql
+```
+
+租户管理员登录后进入 DSH 界面，在「我的记忆」下方的「用量统计」查看最近 7/30/90 天的模型调用轮次、实际尝试次数、
+Token 趋势以及人员/模型分布；普通用户不显示该入口。数据由每用户 DSH Runtime 插件采集并经短期
+Runtime Token 上报；插件不直连平台数据库。
+
+未形成最终消息的失败、重试或中断尝试按 DSH 持久 `assistant/attempt.stream` 中最后一条权威 usage 计入；有消息的调用使用 `assistant/message.usage`，包括已中断消息。没有 usage 的尝试只计次数并显示“用量未知”，不估算 Token。一次调用轮次按用户、会话、turn 去重；旧版明细没有 turn 信息，只能按单条记录近似。历史漏采尝试不会因升级自动补齐，需另行从仍保留的 DSH 会话日志回填。
+
+Token 口径：输入由未缓存输入、缓存读取、缓存写入三项组成；输出单列，推理 Token 是输出的细分，不重复加总。页面展示各缓存项的已知数值和上报覆盖次数；缺失字段不解释为零。“已记录合计”只加总有权威记录的字段，字段缺失时可能低于实际消耗。历史零值无法还原为“真实零”或“未上报”，按未确认处理。
+
+用量上报采用 `${DSH_HOME}/usage-spool` 本地持久队列：网关返回成功后才移除事件；网络故障、缺少通道配置或服务端故障会记录日志并保留重试（每 15 秒，单次请求 5 秒超时）。网关重启后旧 Runtime 的临时 token 会失效，需重启该 Runtime 换取新 token，待报事件会在启动时补发；400/422 错误事件保留为 `.rejected` 文件供排查，不自动丢弃。
 
 ### 开发账号(T1)
 
@@ -84,7 +103,7 @@ pnpm --filter @dsh-platform/gateway hash-password <新密码>
 2. **前端使用根绝对路径**(`/assets`、`/plugins`、`/api`),**无法挂在 `/app/*` 子路径下**。故 dsh UI 挂在**专属 authority**的根路径,网关按 `Host` 路由:
 
 ```
-平台首页  http://localhost:5173        (/api、/auth 归网关)
+平台登录页 http://localhost:5173       (/api、/auth 归网关)
 dsh UI    http://localhost:8080/       根路径整体代理到该用户实例
 ```
 

@@ -1,29 +1,14 @@
 import { StrictMode, useState, useEffect } from 'react'
 import type { FormEvent } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { UserRole } from '@dsh-platform/shared'
-import { login, getMe, logout } from './api.js'
-import { useHashRoute } from './router.js'
-import { AppShell } from './components/AppShell.js'
+import { login, getMe } from './api.js'
 import { BrandMark } from './components/BrandMark.js'
-import { DashboardPage } from './pages/DashboardPage.js'
-import { SessionsPage } from './pages/SessionsPage.js'
-import { WorkspacesPage } from './pages/WorkspacesPage.js'
-import { SkillsPage } from './pages/SkillsPage.js'
-import { KnowledgePage } from './pages/KnowledgePage.js'
-import { McpPage } from './pages/McpPage.js'
-import { MemoryPage } from './pages/MemoryPage.js'
 import './styles/tokens.css'
 
-interface CurrentUser {
-  displayName: string
-  role: UserRole
-}
-
-/** 登录成功后直接进入 dsh 操作界面(跳过平台首页中转)。 */
+/** Portal 只负责登录；登录页不能留在进入 DSH 后的浏览器历史中。 */
 const DSH_UI_URL: string = import.meta.env.VITE_DSH_UI_URL ?? 'http://localhost:8080/'
 
-function LoginView({ onLogin }: { onLogin: (user: CurrentUser) => void }): JSX.Element {
+function LoginView(): JSX.Element {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -32,11 +17,10 @@ function LoginView({ onLogin }: { onLogin: (user: CurrentUser) => void }): JSX.E
   async function handleSubmit(e: FormEvent): Promise<void> {
     e.preventDefault(); setError(null); setBusy(true)
     try {
-      const res = await login(email, password)
-      onLogin({ displayName: res.displayName, role: res.role })
+      await login(email, password)
       // 平台会话已建立(sid cookie 跨 authority 共享);整页跳转到 dsh UI,
       // 由网关按 Host 反代到该用户的运行时实例。
-      window.location.assign(DSH_UI_URL)
+      window.location.replace(DSH_UI_URL)
     } catch (err) {
       const code = (err as Error).message
       setError(
@@ -88,51 +72,27 @@ function LoginView({ onLogin }: { onLogin: (user: CurrentUser) => void }): JSX.E
   )
 }
 
-function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () => void }): JSX.Element {
-  const { path, navigate } = useHashRoute()
-
-  return (
-    <AppShell role={user.role} displayName={user.displayName} currentPath={path} onNavigate={navigate} onLogout={onLogout}>
-      {renderPage(path, user, navigate)}
-    </AppShell>
-  )
-}
-
-function renderPage(path: string, user: CurrentUser, navigate: (p: string) => void): JSX.Element {
-  switch (path) {
-    case '/sessions': return <SessionsPage />
-    case '/workspaces': return <WorkspacesPage />
-    case '/skills': return <SkillsPage />
-    case '/knowledge': return <KnowledgePage />
-    case '/mcp': return <McpPage />
-    case '/memory': return <MemoryPage />
-    default: return <DashboardPage displayName={user.displayName} onNavigate={navigate} />
-  }
-}
-
 function App(): JSX.Element {
-  const [user, setUser] = useState<CurrentUser | null>(null)
-  const [ready, setReady] = useState(false)
+  const [status, setStatus] = useState<'checking' | 'guest' | 'redirecting'>('checking')
 
   useEffect(() => {
+    let active = true
     getMe()
       .then((u) => {
-        // 已持有平台会话:不再展示平台首页,直接整页跳转到 dsh UI。
-        if (u !== null) { window.location.assign(DSH_UI_URL); return }
+        if (!active) return
+        if (u !== null) {
+          setStatus('redirecting')
+          window.location.replace(DSH_UI_URL)
+        } else {
+          setStatus('guest')
+        }
       })
-      .catch(() => {})
-      .finally(() => setReady(true))
+      .catch(() => { if (active) setStatus('guest') })
+    return () => { active = false }
   }, [])
 
-  const handleLogout = async (): Promise<void> => {
-    await logout()
-    setUser(null)
-    window.location.hash = ''
-  }
-
-  if (!ready) return <div style={{ padding: '80px', textAlign: 'center', color: 'var(--cmcc-text-secondary)' }}>加载中...</div>
-  if (user === null) return <LoginView onLogin={setUser} />
-  return <AuthenticatedApp user={user} onLogout={handleLogout} />
+  if (status === 'guest') return <LoginView />
+  return <div style={{ padding: '80px', textAlign: 'center', color: 'var(--cmcc-text-secondary)' }}>加载中...</div>
 }
 
 const labelStyle: React.CSSProperties = { display: 'block', fontSize: '14px', fontWeight: 500, color: 'var(--cmcc-text)', marginBottom: '6px' }

@@ -5,6 +5,7 @@ import type {
   SessionListResponse,
   Workspace,
   WorkspaceListResponse,
+  UsageSummaryResponse,
 } from '@dsh-platform/shared'
 
 /** 读取 CSRF 双提交 token(csrf_token cookie 由网关下发,非 HttpOnly)。 */
@@ -77,6 +78,10 @@ export function recreateWorkspace(sessionId: string): Promise<{ ok: true; redire
 // --- Sessions ---
 export function listSessions(): Promise<SessionListResponse> {
   return request<SessionListResponse>('/api/sessions')
+}
+
+export function getUsageSummary(days: 7 | 30 | 90 = 30): Promise<UsageSummaryResponse> {
+  return request(`/api/usage/summary?days=${days}`)
 }
 
 export function enterSession(sessionId: string): Promise<SessionEnterResult> {

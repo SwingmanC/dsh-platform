@@ -3,7 +3,7 @@
  *
  * 1. 评估 `lib/client.js`,捕获 `window.__ModuleLoader__.load({ id, factory })`。
  * 2. mock module table materialize factory(只暴露官方 baseline externals)。
- * 3. fake ctx 调 `apply`,断言四个 Panel + 品牌槽的 exact 注册参数。
+ * 3. fake ctx 调 `apply`,断言公共 Panel、管理员用量入口 + 品牌槽的注册参数。
  * 4. 断言 `cmcc.smoke` 不再注册。
  */
 import assert from 'node:assert/strict'
@@ -20,6 +20,7 @@ const EXPECTED = [
   { id: 'cmcc.knowledge', label: '知识中心', order: 110 },
   { id: 'cmcc.mcp', label: 'MCP 服务', order: 120 },
   { id: 'cmcc.memory', label: '我的记忆', order: 130 },
+  { id: 'cmcc.usage', label: '用量统计', order: 140 },
 ]
 
 function loadRegistration(path) {
@@ -60,33 +61,42 @@ test('bundle: registration id + exports + baseline externals only', () => {
   assert.deepEqual(exportsObj.inject, ['slots', 'layout'])
 })
 
-test('apply: registers 4 sidebar.panellist entries with exact options', () => {
+test('apply: registers public entries and admin usage entry in order', async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response(JSON.stringify({ role: 'tenant_admin' }), { headers: { 'content-type': 'application/json' } })
+  try {
   const reg = loadRegistration(bundlePath)
   const exportsObj = reg.factory(mockRequire)
   const { ctx, injected, registrations } = makeFakeCtx()
   exportsObj.apply(ctx)
   assert.ok(injected['sidebar.panellist'], 'sidebar.panellist not injected')
   injected['sidebar.panellist']()
+  await new Promise((resolve) => setTimeout(resolve, 0))
   const sidebar = registrations.filter((r) => r.options.name === 'sidebar.panellist')
-  assert.equal(sidebar.length, 4)
+  assert.equal(sidebar.length, 5)
   for (const exp of EXPECTED) {
     const entry = sidebar.find((r) => r.options.id === exp.id)
     assert.ok(entry, `missing sidebar entry ${exp.id}`)
     assert.deepEqual(entry.options, { name: 'sidebar.panellist', id: exp.id, order: exp.order, label: exp.label })
     assert.equal(typeof entry.component, 'function')
   }
+  } finally { globalThis.fetch = originalFetch }
 })
 
-test('apply: registers 4 main keyed panels; sidebar id == main key', () => {
+test('apply: registers 5 main keyed panels; admin sidebar id == main key', async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response(JSON.stringify({ role: 'tenant_admin' }), { headers: { 'content-type': 'application/json' } })
+  try {
   const reg = loadRegistration(bundlePath)
   const exportsObj = reg.factory(mockRequire)
   const { ctx, injected, registrations } = makeFakeCtx()
   exportsObj.apply(ctx)
   assert.ok(injected['main'], 'main not injected')
   injected['sidebar.panellist']()
+  await new Promise((resolve) => setTimeout(resolve, 0))
   injected['main']()
   const main = registrations.filter((r) => r.options.name === 'main')
-  assert.equal(main.length, 4)
+  assert.equal(main.length, 5)
   for (const exp of EXPECTED) {
     const entry = main.find((r) => r.options.key === exp.id)
     assert.ok(entry, `missing main key ${exp.id}`)
@@ -95,6 +105,22 @@ test('apply: registers 4 main keyed panels; sidebar id == main key', () => {
   const sidebarIds = registrations.filter((r) => r.options.name === 'sidebar.panellist').map((r) => r.options.id).sort()
   const mainKeys = main.map((r) => r.options.key).sort()
   assert.deepEqual(sidebarIds, mainKeys, 'sidebar id set must equal main key set')
+  } finally { globalThis.fetch = originalFetch }
+})
+
+test('apply: non-admin never sees usage entry', async () => {
+  const originalFetch = globalThis.fetch
+  globalThis.fetch = async () => new Response(JSON.stringify({ role: 'member' }), { headers: { 'content-type': 'application/json' } })
+  try {
+    const reg = loadRegistration(bundlePath)
+    const { ctx, injected, registrations } = makeFakeCtx()
+    reg.factory(mockRequire).apply(ctx)
+    injected['sidebar.panellist']()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    const ids = registrations.filter((entry) => entry.options.name === 'sidebar.panellist').map((entry) => entry.options.id)
+    assert.equal(ids.length, 4)
+    assert.ok(!ids.includes('cmcc.usage'))
+  } finally { globalThis.fetch = originalFetch }
 })
 
 test('apply: cmcc.smoke is NOT registered', () => {

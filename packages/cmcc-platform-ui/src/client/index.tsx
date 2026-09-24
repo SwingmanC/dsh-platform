@@ -1,12 +1,13 @@
 /**
  * cmcc-platform-ui —— 中国移动能力中心(0.1.5-rc.2 官方 Client Plugin)。
  *
- * 注册四个正式全局 Panel 到 DSH 原生 Shell:
+ * 注册能力 Panel 到 DSH 原生 Shell:
  *   sidebar.panellist(id) == main keyed(key)
  *     cmcc.skills     技能广场
  *     cmcc.knowledge  知识中心
  *     cmcc.mcp        MCP 服务
  *     cmcc.memory     我的记忆
+ *     cmcc.usage      用量统计(租户管理员)
  *
  * 另注册最小中国移动品牌层(sidebar.brand.mark / sidebar.brand.name,shadow 官方)。
  *
@@ -16,6 +17,7 @@
  */
 import * as React from 'react'
 import { PANELS } from './panels/registry.js'
+import { platformApi } from './platform-api.js'
 
 export const name = 'cmcc-platform-ui'
 
@@ -70,13 +72,23 @@ function CmccBrandMark(props: { size?: number }): React.ReactElement {
 }
 
 export function apply(ctx: ClientContext): void {
-  // 四个正式能力入口(sidebar id == main key)。
+  // 先注册公共入口;管理员身份经平台会话确认后再注册用量入口。
   ctx.slots.inject('sidebar.panellist', () => {
-    const disposers = PANELS.map((panel) => ctx.slots.register(
+    const disposers = PANELS.filter((panel) => !panel.adminOnly).map((panel) => ctx.slots.register(
       { name: 'sidebar.panellist', id: panel.id, order: panel.order, label: panel.label },
       panel.Icon as unknown as (props: Record<string, unknown>) => React.ReactNode,
     ))
-    return () => { for (const d of disposers) d() }
+    let disposed = false
+    void platformApi.getCurrentUser().then((user) => {
+      if (disposed || user.role !== 'tenant_admin') return
+      for (const panel of PANELS.filter((entry) => entry.adminOnly)) {
+        disposers.push(ctx.slots.register(
+          { name: 'sidebar.panellist', id: panel.id, order: panel.order, label: panel.label },
+          panel.Icon as unknown as (props: Record<string, unknown>) => React.ReactNode,
+        ))
+      }
+    }).catch(() => { /* 未认证或网络故障时不暴露管理员入口。 */ })
+    return () => { disposed = true; for (const d of disposers) d() }
   })
   ctx.slots.inject('main', () => {
     const disposers = PANELS.map((panel) => ctx.slots.register(

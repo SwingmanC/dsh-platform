@@ -80,3 +80,17 @@ export interface SessionMigrateResponse {
   newSessionId: string
   redirectUrl: string
 }
+
+export interface UsageSummaryResponse {
+  totals: {
+    requests: number
+    inputTokens: number
+    outputTokens: number
+    cacheReadTokens: number
+    cacheWriteTokens: number
+    reasoningTokens: number
+  }
+  daily: Array<{ day: string; requests: number; inputTokens: number; outputTokens: number }>
+  users: Array<{ userId: string; displayName: string; requests: number; inputTokens: number; outputTokens: number }>
+  models: Array<{ provider: string; model: string; requests: number; inputTokens: number; outputTokens: number }>
+}
