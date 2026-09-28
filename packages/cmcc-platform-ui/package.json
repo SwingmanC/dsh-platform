@@ -28,6 +28,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node --import tsx --test tests/*.test.ts tests/*.test.mjs"
   },
+  "dependencies": {
+    "@dsh-platform/shared": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@types/react": "^18.3.12",

@@ -21,6 +21,7 @@ const EXPECTED = [
   { id: 'cmcc.mcp', label: 'MCP 服务', order: 120 },
   { id: 'cmcc.memory', label: '我的记忆', order: 130 },
   { id: 'cmcc.usage', label: '用量统计', order: 140 },
+  { id: 'cmcc.users', label: '人员管理', order: 150 },
 ]
 
 function loadRegistration(path) {
@@ -73,7 +74,7 @@ test('apply: registers public entries and admin usage entry in order', async () 
   injected['sidebar.panellist']()
   await new Promise((resolve) => setTimeout(resolve, 0))
   const sidebar = registrations.filter((r) => r.options.name === 'sidebar.panellist')
-  assert.equal(sidebar.length, 5)
+  assert.equal(sidebar.length, 6)
   for (const exp of EXPECTED) {
     const entry = sidebar.find((r) => r.options.id === exp.id)
     assert.ok(entry, `missing sidebar entry ${exp.id}`)
@@ -83,7 +84,7 @@ test('apply: registers public entries and admin usage entry in order', async () 
   } finally { globalThis.fetch = originalFetch }
 })
 
-test('apply: registers 5 main keyed panels; admin sidebar id == main key', async () => {
+test('apply: registers 6 main keyed panels; admin sidebar id == main key', async () => {
   const originalFetch = globalThis.fetch
   globalThis.fetch = async () => new Response(JSON.stringify({ role: 'tenant_admin' }), { headers: { 'content-type': 'application/json' } })
   try {
@@ -96,7 +97,7 @@ test('apply: registers 5 main keyed panels; admin sidebar id == main key', async
   await new Promise((resolve) => setTimeout(resolve, 0))
   injected['main']()
   const main = registrations.filter((r) => r.options.name === 'main')
-  assert.equal(main.length, 5)
+  assert.equal(main.length, 6)
   for (const exp of EXPECTED) {
     const entry = main.find((r) => r.options.key === exp.id)
     assert.ok(entry, `missing main key ${exp.id}`)
@@ -120,6 +121,7 @@ test('apply: non-admin never sees usage entry', async () => {
     const ids = registrations.filter((entry) => entry.options.name === 'sidebar.panellist').map((entry) => entry.options.id)
     assert.equal(ids.length, 4)
     assert.ok(!ids.includes('cmcc.usage'))
+    assert.ok(!ids.includes('cmcc.users'))
   } finally { globalThis.fetch = originalFetch }
 })
 

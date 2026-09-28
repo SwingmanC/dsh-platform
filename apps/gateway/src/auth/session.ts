@@ -3,6 +3,7 @@ import type { FastifyReply } from 'fastify'
 import type { AuthenticatedPrincipal, UserRole } from '@dsh-platform/shared'
 import { config } from '../config.js'
 import type { SessionData, SessionStore } from './session-store.js'
+import { loadUserAuthState, type UserAuthState } from './user-state.js'
 
 /**
  * 只依赖 cookie/headers 的结构化请求视图,避免与 Fastify 的 RawServer 泛型
@@ -18,6 +19,7 @@ export interface AuthenticatedUser {
   tenantId: string
   displayName: string
   role: UserRole
+  authVersion?: number
 }
 
 const DEVICE_COOKIE = 'device_id'
@@ -28,7 +30,22 @@ const DEVICE_TTL_MS = 365 * 24 * 3600_000
  * sid cookie(HttpOnly、Secure、SameSite=Lax)→ Redis 会话;CSRF 双提交 token。
  */
 export class SessionService {
-  constructor(private readonly store: SessionStore) {}
+  constructor(
+    private readonly store: SessionStore,
+    private readonly loadUser: (id: string) => Promise<UserAuthState | null> = loadUserAuthState,
+  ) {}
+
+  private async validSession(sid: string): Promise<SessionData | null> {
+    const data = await this.store.get(sid)
+    if (data === null) return null
+    const user = await this.loadUser(data.userId)
+    if (user === null || user.status !== 'active' || user.tenantId !== data.tenantId
+      || user.authVersion !== data.revocationEpoch || user.role !== data.role) {
+      await this.store.destroy(sid)
+      return null
+    }
+    return { ...data, displayName: user.displayName }
+  }
 
   get storeKind(): string {
     return this.store.kind
@@ -38,7 +55,7 @@ export class SessionService {
   async read(req: RequestLike): Promise<SessionData | null> {
     const sid = req.cookies[config.session.cookieName]
     if (sid === undefined || sid === '') return null
-    const data = await this.store.get(sid)
+    const data = await this.validSession(sid)
     if (data === null) return null
     await this.store.touch(sid, config.session.ttlMs)
     return data
@@ -56,7 +73,7 @@ export class SessionService {
       csrfSecret: randomBytes(32).toString('base64url'),
       issuedAt: now,
       lastSeen: now,
-      revocationEpoch: 0,
+      revocationEpoch: user.authVersion ?? 0,
     }
     const sid = await this.store.create(data, config.session.ttlMs)
     const domain = config.session.cookieDomain
@@ -119,6 +136,7 @@ export class SessionService {
   /** 从会话数据和 sid 构建已验证身份。 */
   buildPrincipal(sid: string, data: SessionData): AuthenticatedPrincipal {
     return {
+      authVersion: data.revocationEpoch,
       tenantId: data.tenantId,
       userId: data.userId,
       role: data.role,
@@ -132,7 +150,7 @@ export class SessionService {
   async readPrincipal(req: RequestLike): Promise<{ principal: AuthenticatedPrincipal; csrfSecret: string } | null> {
     const sid = req.cookies[config.session.cookieName]
     if (sid === undefined || sid === '') return null
-    const data = await this.store.get(sid)
+    const data = await this.validSession(sid)
     if (data === null) return null
     await this.store.touch(sid, config.session.ttlMs)
     return {

@@ -2,6 +2,7 @@ import type { TenantContext } from '@dsh-platform/shared'
 import { execute } from '../db.js'
 
 export type AuditAction =
+  | 'user.create' | 'user.update' | 'user.password.reset' | 'user.delete'
   | 'login.success' | 'login.failed' | 'login.locked'
   | 'logout'
   | 'runtime.ensure' | 'runtime.start' | 'runtime.ready' | 'runtime.dead' | 'runtime.drain'
@@ -33,7 +34,7 @@ export class AuditRepository {
         ],
       )
     } catch {
-      // 审计落库失败不抛出
+      console.warn('[audit] write failed', { action: event.action })
     }
   }
 }

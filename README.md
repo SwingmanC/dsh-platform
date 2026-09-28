@@ -78,7 +78,9 @@ Token 口径：输入由未缓存输入、缓存读取、缓存写入三项组�
 |---|---|---|
 | `admin@local.dev` | `Admin@12345` | `tenant_admin` |
 
-改密:生成 argon2id 哈希后写回 `t_dsh_users.password_hash`:
+租户管理员可在 DSH 侧边栏“人员管理”创建成员、编辑资料与角色、启停账号、重置密码和逻辑删除人员。删除保留历史资产，禁止删除自己。管理范围限本租户；存量库需按顺序执行 `db/migrations/012-user-management.sql`、`db/migrations/013-user-soft-delete.sql`（仅执行尚未应用的迁移）。安全变更会使旧登录会话失效，详见 [人员管理说明](docs/implementation/user-management.md)。
+
+离线维护改密:生成 argon2id 哈希后写回 `t_dsh_users.password_hash`，并将 `auth_version` 加 1 撤销旧会话:
 
 ```sh
 pnpm --filter @dsh-platform/gateway hash-password <新密码>

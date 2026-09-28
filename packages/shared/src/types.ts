@@ -81,6 +81,7 @@ export type QuotaKind = 'concurrent_runtimes' | 'sessions' | 'daily_tokens'
  * 禁止从 body/query/header 读取 userId。
  */
 export interface AuthenticatedPrincipal {
+  authVersion?: number
   tenantId: string
   userId: string
   role: UserRole
