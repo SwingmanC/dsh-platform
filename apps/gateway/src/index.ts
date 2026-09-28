@@ -1,4 +1,7 @@
+import { closeAuditWriter } from './repositories/audit-repository.js'
 import { registerPlatformAuthentication } from './auth/platform-auth.js'
+import { registerAuditHooks } from './audit-hooks.js'
+import { registerAuditRoutes } from './routes/audit.js'
 import Fastify from 'fastify'
 import cookie from '@fastify/cookie'
 import rateLimit from '@fastify/rate-limit'
@@ -22,7 +25,7 @@ import { ensureRuntime, shutdownRuntimes, startIdleReaper, probeDshLauncher } fr
 
 const app = Fastify({
   logger: true,
-  trustProxy: true,
+  trustProxy: config.trustedProxies.length ? config.trustedProxies : false,
 })
 
 await app.register(cookie)
@@ -35,6 +38,7 @@ const sessions = new SessionService(
   }),
 )
 
+registerAuditHooks(app)
 registerPlatformAuthentication(app, sessions)
 
 app.get('/api/health', async () => ({ ok: true, db: await ping() }))
@@ -46,6 +50,7 @@ registerSkillRoutes(app)
 registerKnowledgeRoutes(app)
 registerMCPRoutes(app)
 registerUsageRoutes(app)
+registerAuditRoutes(app)
 registerUserRoutes(app, new UserService(userRepository, revokeUserRuntime))
 
 app.post('/api/runtimes/ensure', async (req, reply) => {
@@ -85,6 +90,7 @@ const stopReaper = startIdleReaper({
 app.addHook('onClose', async () => {
   stopReaper()
   shutdownRuntimes()
+  await closeAuditWriter()
   await sessions.close()
 })
 

@@ -13,7 +13,7 @@ import { mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { config } from '../config.js'
 import { queryMany, queryOne, execute } from '../db.js'
-import { auditRepository } from '../repositories/audit-repository.js'
+import { auditService } from '../services/audit-service.js'
 import { workspaceRepository } from '../repositories/workspace-repository.js'
 import { agentBindingRepository } from '../repositories/binding-repository.js'
 import { userWorkspaceRoot, isWithinUserRoot, pathExists } from '../platform.js'
@@ -35,6 +35,7 @@ export function registerPlatformRoutes(app: FastifyInstance): void {
     const name = typeof body?.name === 'string' ? body.name : ''
     try {
       const ws = await createWorkspace(req.principal, name)
+      await auditService.write({ action: 'workspace.create', resourceId: ws.id })
       return reply.code(201).send(ws)
     } catch (err) {
       app.log.error({ err, name }, 'createWorkspace failed')
@@ -59,7 +60,7 @@ export function registerPlatformRoutes(app: FastifyInstance): void {
 
     const exists = await pathExists(binding.workspace)
     if (!exists) {
-      await auditRepository.write({ action: 'session.enter', ctx, subject: binding.workspace })
+      await auditService.write({ action: 'workspace.missing', ctx, resourceId: sessionId, result: 'DENIED', reasonCode: 'workspace-missing' })
       return reply.send({
         ok: false,
         reason: 'workspace-missing',
@@ -67,7 +68,7 @@ export function registerPlatformRoutes(app: FastifyInstance): void {
       } satisfies SessionEnterResult)
     }
 
-    await auditRepository.write({ action: 'session.enter', ctx, subject: sessionId })
+    await auditService.write({ action: 'session.enter', ctx, subject: sessionId })
     return reply.send({
       ok: true,
       sessionId,
@@ -89,7 +90,7 @@ export function registerPlatformRoutes(app: FastifyInstance): void {
     } catch {
       return reply.code(400).send({ error: 'outside-root', code: 'outside-root' })
     }
-    await auditRepository.write({ action: 'session.enter', ctx, subject: binding.workspace })
+    await auditService.write({ action: 'workspace.recreate', ctx, resourceId: sessionId })
     return reply.send({ ok: true, redirectUrl: `${config.platform.scheme}://${config.dsh.uiAuthority}/` })
   })
 

@@ -1,7 +1,7 @@
 import type { TenantContext, MemoryRecord, MemorySearchInput, MemorySearchResult, PromoteMemoryInput, MemoryVisibility, MemoryKind } from '@dsh-platform/shared'
 import { randomUUID } from 'node:crypto'
 import { memoryRepository, contentHashOf } from '../repositories/memory-repository.js'
-import { auditRepository } from '../repositories/audit-repository.js'
+import { auditService } from '../services/audit-service.js'
 import { execute } from '../db.js'
 import { isSecretLike, isSensitiveContent, inferKind } from '../memory-extraction.js'
 import { buildMemoryProjection } from '../memory-projection.js'
@@ -50,7 +50,7 @@ export class MemoryService {
       if (old) await memoryRepository.supersede(old.id, record.id)
     }
 
-    await auditRepository.write({ action: 'memory.create', ctx, subject: `memory.create:${record.id}` })
+    await auditService.write({ action: 'memory.create', ctx, subject: record.id })
     return record
   }
 
@@ -61,7 +61,7 @@ export class MemoryService {
   async forget(ctx: TenantContext, memoryId: string): Promise<boolean> {
     const deleted = await memoryRepository.delete(ctx, memoryId)
     if (deleted) {
-      await auditRepository.write({ action: 'memory.delete', ctx, subject: `memory.delete:${memoryId}` })
+      await auditService.write({ action: 'memory.delete', ctx, subject: memoryId })
     }
     return deleted
   }
@@ -82,9 +82,10 @@ export class MemoryService {
        VALUES (?, ?, ?, ?, ?, ?, 'approved', ?)`,
       [promotionId, input.memoryId, record.visibility, input.targetVisibility, ctx.userId, ctx.userId, input.reason ?? null],
     )
-    await auditRepository.write({
+    await auditService.write({
       action: 'memory.promote', ctx,
-      subject: `memory.promote:${input.memoryId}:${record.visibility}->${input.targetVisibility}`,
+      subject: input.memoryId,
+      payload: { fromVisibility: record.visibility, toVisibility: input.targetVisibility },
     })
     return { ok: true }
   }
@@ -123,7 +124,7 @@ export class MemoryService {
     const deleted = await memoryRepository.softDeleteByOwner(memoryId, userId, tenantId)
     if (deleted) {
       const ctx: TenantContext = { tenantId, userId, role: 'member', requestId: '', platformSessionId: '', deviceId: '' }
-      await auditRepository.write({ action: 'memory.delete', ctx, subject: `memory.delete:${memoryId}` })
+      await auditService.write({ action: 'memory.delete', ctx, subject: memoryId })
     }
     return deleted
   }

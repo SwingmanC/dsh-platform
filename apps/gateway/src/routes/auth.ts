@@ -5,7 +5,7 @@ import { queryMany } from '../db.js'
 import { verifyPassword } from '../auth/password.js'
 import type { SessionService } from '../auth/session.js'
 import { checkLoginAllowed, clearLoginFailures, loginKey, recordLoginFailure } from '../auth/login-guard.js'
-import { auditRepository } from '../repositories/audit-repository.js'
+import { auditService } from '../services/audit-service.js'
 
 interface UserRow extends RowDataPacket {
   id: string
@@ -36,7 +36,7 @@ export function registerAuthRoutes(app: FastifyInstance, sessions: SessionServic
     if (!gate.allowed) {
       const retryAfter = Math.ceil(gate.retryAfterMs / 1000)
       reply.header('retry-after', String(retryAfter))
-      await auditRepository.write({ action: 'login.failed', subject: email, payload: { ip: req.ip, reason: 'locked' } })
+      await auditService.write({ action: 'login.locked', result: 'DENIED', subject: email, reasonCode: 'locked' })
       return reply.code(429).send({ error: 'too-many-attempts', code: 'locked', retryAfter })
     }
 
@@ -54,8 +54,10 @@ export function registerAuthRoutes(app: FastifyInstance, sessions: SessionServic
 
     if (user === undefined || !ok) {
       const locked = recordLoginFailure(key)
-      await auditRepository.write({
-        action: locked ? 'login.failed' : 'login.failed',
+      await auditService.write({
+        action: locked ? 'login.locked' : 'login.failed',
+        result: 'DENIED',
+        identity: user ? { tenantId: user.tenantId, userId: user.id, displayName: user.displayName } : undefined,
         subject: email,
         payload: { ip: req.ip, locked },
       })
@@ -63,7 +65,7 @@ export function registerAuthRoutes(app: FastifyInstance, sessions: SessionServic
     }
 
     if (user.status !== 'active') {
-      await auditRepository.write({ action: 'login.failed', subject: email, payload: { reason: 'disabled' } })
+      await auditService.write({ action: 'login.failed', result: 'DENIED', identity: { tenantId: user.tenantId, userId: user.id, displayName: user.displayName }, subject: email, reasonCode: 'disabled' })
       return reply.code(403).send({ error: 'account-disabled', code: 'account-disabled' })
     }
 
@@ -72,7 +74,7 @@ export function registerAuthRoutes(app: FastifyInstance, sessions: SessionServic
     await sessions.establish(reply, {
       userId: user.id, tenantId: user.tenantId, displayName: user.displayName, role: user.role, authVersion: user.authVersion,
     }, deviceId)
-    await auditRepository.write({ action: 'login.success', subject: email, payload: { userId: user.id } })
+    await auditService.write({ action: 'login.success', identity: { tenantId: user.tenantId, userId: user.id, displayName: user.displayName }, resourceType: 'user', resourceId: user.id })
 
     const response: LoginResponse = { userId: user.id, displayName: user.displayName, role: user.role }
     return reply.send(response)
@@ -92,7 +94,7 @@ export function registerAuthRoutes(app: FastifyInstance, sessions: SessionServic
       return reply.code(403).send({ error: 'csrf-failed', code: 'csrf-failed' })
     }
     await sessions.destroy(req, reply)
-    await auditRepository.write({ action: 'logout', subject: session.principal.userId })
+    await auditService.write({ action: 'logout', identity: session.principal, subject: session.principal.userId })
     return reply.code(302).header('location', '/login').send()
   })
 }

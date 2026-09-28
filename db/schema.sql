@@ -203,7 +203,18 @@ CREATE TABLE t_dsh_audit_events (
   subject    VARCHAR(256),
   payload    JSON,
   at         DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  KEY idx_audit_tenant_time (tenant_id, at)
+  actor_name VARCHAR(128),
+  resource_type VARCHAR(64),
+  resource_id VARCHAR(256),
+  result VARCHAR(16),
+  reason_code VARCHAR(64),
+  request_id VARCHAR(128),
+  client_ip VARCHAR(45),
+  user_agent VARCHAR(512),
+  source VARCHAR(16),
+  KEY idx_audit_tenant_time (tenant_id, at),
+  KEY idx_audit_actor_time (tenant_id, actor, at, id),
+  KEY idx_audit_action_time (tenant_id, action, at, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Memory 长期记忆(Phase 03)
