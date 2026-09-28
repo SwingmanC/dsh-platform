@@ -68,8 +68,11 @@ CREATE TABLE t_dsh_users (
   password_hash VARCHAR(255),                  -- argon2id;仅 OIDC 登录的用户为 NULL(platform 设计 §3.1)
   role          VARCHAR(32)   NOT NULL DEFAULT 'member',  -- 'tenant_admin' | 'operator' | 'member'
   status        VARCHAR(16)   NOT NULL DEFAULT 'active',  -- active | disabled
+  auth_version  INT UNSIGNED  NOT NULL DEFAULT 0, -- 账号安全变更使旧会话失效
+  deleted_at    DATETIME(3)   NULL DEFAULT NULL, -- 逻辑删除，历史资产与邮箱归属保留
   created_at    DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   UNIQUE KEY uk_users_tenant_email (tenant_id, email),
+  UNIQUE KEY uk_users_email (email), -- 当前登录按邮箱全局定位用户
   KEY idx_users_external_sub (external_sub),
   CONSTRAINT fk_users_tenant FOREIGN KEY (tenant_id) REFERENCES t_dsh_tenants(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

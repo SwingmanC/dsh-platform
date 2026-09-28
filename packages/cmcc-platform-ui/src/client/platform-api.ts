@@ -23,6 +23,7 @@ import type {
   Skill,
   SkillListResult,
 } from './models/types.js'
+import type { CreateUserInput, UpdateUserInput, UserListQuery, UserListResponse, UserMutationResponse, DeleteUserResponse, MeResponse } from '@dsh-platform/shared'
 
 /** Knowledge Runtime 投影状态(来自 Gateway 真实 evidence)。 */
 export interface KnowledgeRuntimeStatus {
@@ -200,12 +201,32 @@ export class PlatformApiClient {
     return this.request<T>(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) })
   }
 
-  getCurrentUser(): Promise<{ role: 'tenant_admin' | 'operator' | 'member' }> {
+  getCurrentUser(): Promise<MeResponse> {
     return this.request('/auth/me')
   }
 
   getUsageSummary(days: 7 | 30 | 90 = 30): Promise<UsageSummary> {
     return this.request<UsageSummary>(`/api/usage/summary?days=${days}`)
+  }
+
+  listUsers(query: UserListQuery = {}): Promise<UserListResponse> {
+    return this.request(`/api/admin/users${qs({ ...query })}`)
+  }
+
+  createUser(input: CreateUserInput): Promise<UserMutationResponse> {
+    return this.mutate('/api/admin/users', 'POST', input)
+  }
+
+  updateUser(id: string, input: UpdateUserInput): Promise<UserMutationResponse> {
+    return this.mutate(`/api/admin/users/${encodeURIComponent(id)}`, 'PATCH', input)
+  }
+
+  resetUserPassword(id: string, password: string): Promise<UserMutationResponse> {
+    return this.mutate(`/api/admin/users/${encodeURIComponent(id)}/reset-password`, 'POST', { password })
+  }
+
+  deleteUser(id: string): Promise<DeleteUserResponse> {
+    return this.mutate(`/api/admin/users/${encodeURIComponent(id)}`, 'DELETE')
   }
 
   // --- Skills ---

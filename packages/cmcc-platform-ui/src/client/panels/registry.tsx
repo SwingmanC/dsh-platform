@@ -10,8 +10,9 @@ import { KnowledgePanel } from './KnowledgePanel.js'
 import { McpPanel } from './McpPanel.js'
 import { MemoryPanel } from './MemoryPanel.js'
 import { UsagePanel } from './UsagePanel.js'
+import { UsersPanel } from './UsersPanel.js'
 
-export type PanelId = 'cmcc.skills' | 'cmcc.knowledge' | 'cmcc.mcp' | 'cmcc.memory' | 'cmcc.usage'
+export type PanelId = 'cmcc.skills' | 'cmcc.knowledge' | 'cmcc.mcp' | 'cmcc.memory' | 'cmcc.usage' | 'cmcc.users'
 
 export interface PanelDef {
   id: PanelId
@@ -79,4 +80,5 @@ export const PANELS: readonly PanelDef[] = [
   { id: 'cmcc.mcp', label: 'MCP 服务', order: 120, Icon: McpIcon, Component: McpPanel },
   { id: 'cmcc.memory', label: '我的记忆', order: 130, Icon: MemoryIcon, Component: MemoryPanel },
   { id: 'cmcc.usage', label: '用量统计', order: 140, Icon: UsageIcon, Component: UsagePanel, adminOnly: true },
+  { id: 'cmcc.users', label: '人员管理', order: 150, Icon: icon(<><circle cx="9" cy="8" r="3" /><path d="M3 21v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 3 4v2" /></>), Component: UsersPanel, adminOnly: true },
 ]

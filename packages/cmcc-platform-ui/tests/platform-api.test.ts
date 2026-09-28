@@ -96,3 +96,24 @@ test('identity: client never sends userId/tenantId in body/query', async () => {
   const all = JSON.stringify(calls)
   assert.ok(!/userId|tenantId|ownerId/.test(all), 'client must not transmit identity scoping fields')
 })
+
+test('personnel API sends scoped filters and CSRF-protected mutations without an actor identity', async () => {
+  globalThis.document = { cookie: 'csrf_token=people-csrf' }
+  try {
+    const { fetchImpl, calls } = mockFetch(() => ({ body: { users: [], total: 0 } }))
+    const api = new PlatformApiClient(fetchImpl)
+    await api.listUsers({ q: '张 & 李', role: 'member', status: 'active', page: 2, pageSize: 20 })
+    await api.createUser({ email: 'person@example.test', displayName: '张', role: 'member', password: 'a-password-123' })
+    await api.updateUser('id/escaped', { status: 'disabled' })
+    await api.resetUserPassword('id/escaped', 'replacement-123')
+    await api.deleteUser('id/escaped')
+    assert.equal(new URL(calls[0].url, 'http://test').searchParams.get('q'), '张 & 李')
+    assert.equal(calls[2].url, '/api/admin/users/id%2Fescaped')
+    assert.equal(calls[3].url, '/api/admin/users/id%2Fescaped/reset-password')
+    for (const call of calls.slice(1)) assert.equal(call.init.headers['x-csrf-token'], 'people-csrf')
+    assert.deepEqual(calls.slice(1).map((call) => call.init.method), ['POST', 'PATCH', 'POST', 'DELETE'])
+    assert.equal(calls[4].url, '/api/admin/users/id%2Fescaped')
+    assert.equal(calls[4].init.body, undefined)
+    assert.doesNotMatch(JSON.stringify(calls), /tenantId|actor|ownerId/)
+  } finally { delete globalThis.document }
+})

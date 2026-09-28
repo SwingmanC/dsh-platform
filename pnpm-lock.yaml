@@ -139,6 +139,10 @@ importers:
         version: 5.9.3
 
   packages/cmcc-platform-ui:
+    dependencies:
+      '@dsh-platform/shared':
+        specifier: workspace:*
+        version: link:../shared
     devDependencies:
       '@types/node':
         specifier: ^22.10.0
