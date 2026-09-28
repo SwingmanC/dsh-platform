@@ -70,6 +70,11 @@ Token 口径：输入由未缓存输入、缓存读取、缓存写入三项组�
 
 用量上报采用 `${DSH_HOME}/usage-spool` 本地持久队列：网关返回成功后才移除事件；网络故障、缺少通道配置或服务端故障会记录日志并保留重试（每 15 秒，单次请求 5 秒超时）。网关重启后旧 Runtime 的临时 token 会失效，需重启该 Runtime 换取新 token，待报事件会在启动时补发；400/422 错误事件保留为 `.rejected` 文件供排查，不自动丢弃。
 
+租户管理员可在 DSH 侧边栏「审计日志」查看本租户的操作记录，支持条件筛选、分页和只读详情。
+存量库需执行 `db/migrations/014-audit-log.sql`（仅执行尚未应用的迁移），再重启网关及已有 Runtime。
+若部署在反向代理后，需配置 `TRUSTED_PROXIES` 为实际代理地址/CIDR，以正确记录客户端 IP。
+详见 [审计日志第一期](docs/implementation/audit-log.md)。
+
 ### 开发账号(T1)
 
 种子数据内置开发管理员(**仅本地,生产必须改密或走 OIDC**):
@@ -163,7 +168,7 @@ dsh UI    http://localhost:8080/       根路径整体代理到该用户实例
 - **Skill 广场**:Private/Tenant/Public 可见性 + 版本管理 + 安装/卸载
 - **知识库**:个人/租户知识库 + 文档管理 + 块级搜索 + 挂载
 - **MCP 服务中心**:HTTP + stdio MCP + 审批门禁 + 授权管理
-- **审计**:全量审计事件 + AuditRepository
+- **审计**:平台操作事件、租户隔离查询及 DSH 管理面板；[第一期说明与升级步骤](docs/implementation/audit-log.md)
 - **门户**:中国移动品牌双栏登录 + Dashboard + 角色感知导航
 
 - **T2**:`supervisor.ts` 维护运行时注册表,`ensureRuntime` 复用/拉起实例;空闲巡检(`PLATFORM_DSH_IDLE_TTL_MS`,默认 30min)优雅排空回收;`t_dsh_runtimes` 落库(starting/ready/draining/dead);子进程 env 剔除平台变量并注入 `PLATFORM_USER_ID`/`PLATFORM_USER_DISPLAY`/`PLATFORM_GATEWAY_ORIGIN`/`PLATFORM_WORKSPACE_ROOT`。凭据解密注入(BYOK)待 P2。

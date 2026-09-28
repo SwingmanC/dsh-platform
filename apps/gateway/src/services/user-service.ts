@@ -1,14 +1,14 @@
 import type { AuthenticatedPrincipal, TenantContext, UserMutationResponse, DeleteUserResponse } from '@dsh-platform/shared'
 import { hashPassword } from '../auth/password.js'
 import { userRepository, type UserRepository } from '../repositories/user-repository.js'
-import { auditRepository } from '../repositories/audit-repository.js'
+import { auditService } from '../services/audit-service.js'
 import { createUserInput, passwordInput, updateUserInput, userListQuery, UserManagementError } from './user-validation.js'
 
 export class UserService {
   constructor(
     private readonly repository: Pick<UserRepository, 'list' | 'create' | 'update' | 'remove'> = userRepository,
     private readonly stopRuntime: (userId: string) => Promise<void> = async () => {},
-    private readonly audit: typeof auditRepository = auditRepository,
+    private readonly audit: Pick<typeof auditService, 'write'> = auditService,
   ) {}
 
   private requireAdmin(actor: AuthenticatedPrincipal): void {

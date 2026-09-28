@@ -1,3 +1,4 @@
+import { auditService } from './services/audit-service.js'
 import { spawn } from 'node:child_process'
 import type { ChildProcess, SpawnOptions } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -310,7 +311,18 @@ export async function ensureRuntime(user: RuntimeUser | AuthenticatedPrincipal):
   const pending = inflight.get(user.userId)
   if (pending !== undefined) return pending
 
-  const task = spawnRuntime(user, generation).finally(() => inflight.delete(user.userId))
+  const task = (async () => {
+    try {
+      const runtime = await spawnRuntime(user, generation)
+      await auditService.write({ action: 'runtime.start', identity: user, resourceId: runtime.runtimeId })
+      await auditService.write({ action: 'runtime.ready', identity: user, resourceId: runtime.runtimeId })
+      return runtime
+    } catch (error) {
+      await auditService.write({ action: 'runtime.start', identity: user, resourceId: user.userId,
+        result: 'ERROR', reasonCode: 'runtime-start-failed' })
+      throw error
+    }
+  })().finally(() => inflight.delete(user.userId))
   inflight.set(user.userId, task)
   return task
 }
@@ -530,6 +542,8 @@ async function spawnRuntime(user: RuntimeUser, generation: number): Promise<Runt
       children.delete(user.userId)
       // Runtime 退出:轮换/吊销 internal channel token。
       revokeRuntimeToken(user.userId)
+      void auditService.write({ action: 'runtime.dead', identity: { tenantId: user.tenantId }, source: 'system', resourceId: base.runtimeId,
+        result: base.state === 'draining' || (base.state === 'ready' && code === 0) ? 'SUCCESS' : 'ERROR', payload: { userId: user.userId, code, signal } })
       const current = registry.get(user.userId)
       if (current !== undefined) {
         // 进程退出:清空内存中的 launch token,旧 token 不得复用。
@@ -577,6 +591,7 @@ export async function drainRuntime(userId: string): Promise<void> {
   children.delete(userId)
   registry.delete(userId)
   updateRuntimeState(runtime.runtimeId, 'dead')
+  await auditService.write({ action: 'runtime.drain', identity: { tenantId: runtime.tenantId }, source: 'system', resourceId: runtime.runtimeId, payload: { userId } })
 }
 
 /** 账号安全变更：阻止尚在准备的启动任务，撤销内部令牌并断开现有 Runtime。 */

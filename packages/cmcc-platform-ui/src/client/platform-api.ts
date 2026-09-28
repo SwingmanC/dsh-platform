@@ -1,3 +1,4 @@
+import type { AuditListQuery, AuditListResponse, AuditLogItem } from '@dsh-platform/shared'
 /**
  * PlatformApiClient —— 集中封装平台 Gateway REST API。
  *
@@ -227,6 +228,14 @@ export class PlatformApiClient {
 
   deleteUser(id: string): Promise<DeleteUserResponse> {
     return this.mutate(`/api/admin/users/${encodeURIComponent(id)}`, 'DELETE')
+  }
+
+  listAuditEvents(query: AuditListQuery = {}): Promise<AuditListResponse> {
+    return this.request(`/api/audit/events${qs({ ...query })}`)
+  }
+
+  getAuditEvent(id: string): Promise<AuditLogItem> {
+    return this.request(`/api/audit/events/${encodeURIComponent(id)}`)
   }
 
   // --- Skills ---

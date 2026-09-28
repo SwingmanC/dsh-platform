@@ -9,6 +9,7 @@
  *     cmcc.memory     我的记忆
  *     cmcc.usage      用量统计(租户管理员)
  *     cmcc.users      人员管理(租户管理员)
+ *     cmcc.audit      审计日志(租户管理员)
  *
  * 另注册最小中国移动品牌层(sidebar.brand.mark / sidebar.brand.name,shadow 官方)。
  *
@@ -73,7 +74,7 @@ function CmccBrandMark(props: { size?: number }): React.ReactElement {
 }
 
 export function apply(ctx: ClientContext): void {
-  // 先注册公共入口;管理员身份经平台会话确认后再注册用量和人员管理入口。
+  // 先注册公共入口;管理员身份经平台会话确认后再注册管理员入口。
   ctx.slots.inject('sidebar.panellist', () => {
     const disposers = PANELS.filter((panel) => !panel.adminOnly).map((panel) => ctx.slots.register(
       { name: 'sidebar.panellist', id: panel.id, order: panel.order, label: panel.label },

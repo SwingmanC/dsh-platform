@@ -10,9 +10,10 @@ import { KnowledgePanel } from './KnowledgePanel.js'
 import { McpPanel } from './McpPanel.js'
 import { MemoryPanel } from './MemoryPanel.js'
 import { UsagePanel } from './UsagePanel.js'
+import { AuditPanel } from './AuditPanel.js'
 import { UsersPanel } from './UsersPanel.js'
 
-export type PanelId = 'cmcc.skills' | 'cmcc.knowledge' | 'cmcc.mcp' | 'cmcc.memory' | 'cmcc.usage' | 'cmcc.users'
+export type PanelId = 'cmcc.skills' | 'cmcc.knowledge' | 'cmcc.mcp' | 'cmcc.memory' | 'cmcc.usage' | 'cmcc.users' | 'cmcc.audit'
 
 export interface PanelDef {
   id: PanelId
@@ -74,6 +75,8 @@ const UsageIcon = icon(
   </>,
 )
 
+const AuditIcon = icon(<><path d="M6 3h12v18H6zM9 7h6M9 11h6M9 15h4" /></>)
+
 export const PANELS: readonly PanelDef[] = [
   { id: 'cmcc.skills', label: '技能广场', order: 100, Icon: SkillsIcon, Component: SkillPanel },
   { id: 'cmcc.knowledge', label: '知识中心', order: 110, Icon: KnowledgeIcon, Component: KnowledgePanel },
@@ -81,4 +84,5 @@ export const PANELS: readonly PanelDef[] = [
   { id: 'cmcc.memory', label: '我的记忆', order: 130, Icon: MemoryIcon, Component: MemoryPanel },
   { id: 'cmcc.usage', label: '用量统计', order: 140, Icon: UsageIcon, Component: UsagePanel, adminOnly: true },
   { id: 'cmcc.users', label: '人员管理', order: 150, Icon: icon(<><circle cx="9" cy="8" r="3" /><path d="M3 21v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6M18 15a5 5 0 0 1 3 4v2" /></>), Component: UsersPanel, adminOnly: true },
+  { id: 'cmcc.audit', label: '审计日志', order: 160, Icon: AuditIcon, Component: AuditPanel, adminOnly: true },
 ]

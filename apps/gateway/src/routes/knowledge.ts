@@ -2,14 +2,16 @@ import type { FastifyInstance } from 'fastify'
 import type { AuthenticatedPrincipal, TenantContext, KbSearchInput } from '@dsh-platform/shared'
 import { knowledgeService } from '../services/knowledge-service.js'
 import { readKnowledgeProjectionStatus } from '../knowledge-projection.js'
+import { auditService } from '../services/audit-service.js'
 import { getRuntime } from '../supervisor.js'
 
 function toCtx(p: AuthenticatedPrincipal): TenantContext {
-  return { tenantId: p.tenantId, userId: p.userId, role: p.role, requestId: '', platformSessionId: '', deviceId: p.deviceId }
+  return { tenantId: p.tenantId, userId: p.userId, role: p.role, requestId: p.requestId ?? '', platformSessionId: p.platformSessionId ?? '', deviceId: p.deviceId }
 }
 
 async function rebuildProjection(p: AuthenticatedPrincipal): Promise<void> {
   try { await knowledgeService.buildProjection(p.userId, p.tenantId) } catch (err) {
+    await auditService.write({ action: 'projection.sync', resourceType: 'knowledge', result: 'ERROR', reasonCode: 'projection-failed', payload: { syncStatus: 'failed' } })
     process.stderr.write(`[knowledge-projection] rebuild failed for ${p.userId}: ${String(err)}\n`)
   }
 }

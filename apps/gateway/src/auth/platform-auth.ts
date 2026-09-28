@@ -35,6 +35,7 @@ const PLATFORM_API_PATTERNS: readonly RegExp[] = [
   /^\/api\/memory\/namespaces$/,
   /^\/api\/memory\/runtime-status$/,
   /^\/api\/usage\/summary$/,
+  /^\/api\/audit\/events(\/[1-9]\d{0,19})?$/,
   /^\/api\/admin\/users$/,
   new RegExp(`^/api/admin/users/${UUID}(/reset-password)?$`),
   new RegExp(`^/api/memory/${UUID}(/promote)?$`),
@@ -59,7 +60,7 @@ export function registerPlatformAuthentication(app: FastifyInstance, sessions: S
       await reply.code(401).send({ error: 'unauthenticated' })
       return
     }
-    req.principal = session.principal
+    req.principal = { ...session.principal, requestId: req.id }
     const method = req.method.toUpperCase()
     if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
       if (!sessions.verifyCsrf(req, session.csrfSecret)) {

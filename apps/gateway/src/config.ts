@@ -66,6 +66,7 @@ export const config = {
   isProd,
   repoRoot,
   port: num('PORT', 8080),
+  trustedProxies: str('TRUSTED_PROXIES', '').split(',').map((v) => v.trim()).filter(Boolean),
   host: str('HOST', '0.0.0.0'),
 
   mysql: {
