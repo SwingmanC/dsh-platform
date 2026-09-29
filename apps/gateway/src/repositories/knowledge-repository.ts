@@ -60,13 +60,14 @@ export class KnowledgeRepository {
     return doc ? toDoc(doc) : undefined as unknown as KbDocument
   }
 
-  async createVersion(docId: string, data: { version: number; content: string; contentHash: string; filepath: string; fileSize: number }): Promise<void> {
+  async createVersion(docId: string, data: { version: number; content: string; contentHash: string; filepath: string; fileSize: number; contentType?: string }): Promise<void> {
     const id = randomUUID()
     await execute(
       `INSERT INTO t_dsh_knowledge_document_versions (id, doc_id, version, content, content_hash, filepath, file_size) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       [id, docId, data.version, data.content, data.contentHash, data.filepath, data.fileSize])
-    await execute(`UPDATE t_dsh_knowledge_documents SET filepath = ?, file_size = ?, content_type = 'text/plain', current_version = ? WHERE id = ?`,
-      [data.filepath, data.fileSize, data.version, docId])
+    // K-T1:content_type 由调用方传入(pdf/docx/md/txt),不再硬编码 text/plain。
+    await execute(`UPDATE t_dsh_knowledge_documents SET filepath = ?, file_size = ?, content_type = ?, current_version = ? WHERE id = ?`,
+      [data.filepath, data.fileSize, data.contentType ?? 'text/plain', data.version, docId])
   }
 
   async createJob(kbId: string, docId: string, sourceType: string): Promise<string> {
@@ -85,18 +86,88 @@ export class KnowledgeRepository {
     }
   }
 
+  /** 单文档失败状态(K-T1):只影响当前文档,不牵连 KB 其他文档。 */
+  async updateDocumentStatus(docId: string, status: string): Promise<void> {
+    await execute(`UPDATE t_dsh_knowledge_documents SET status = ? WHERE id = ?`, [status, docId])
+  }
+
+  /** K-T6-lite:按 id 批量取 chunk(向量命中内容回填;scope 过滤由调用方完成)。 */
+  async getChunksByIds(ids: string[]): Promise<Array<{ id: string; docId: string; kbId: string; chunkIndex: number; content: string }>> {
+    if (ids.length === 0) return []
+    const placeholders = ids.map(() => '?').join(',')
+    return queryMany(
+      `SELECT id, doc_id AS docId, kb_id AS kbId, chunk_index AS chunkIndex, content
+         FROM t_dsh_knowledge_chunks WHERE id IN (${placeholders})`,
+      ids)
+  }
+
+  /** K-T7:docId → 当前版本 versionId 映射(document_versions.version = documents.current_version)。 */
+  async getVersionIdMap(docIds: string[]): Promise<Map<string, string>> {
+    const map = new Map<string, string>()
+    if (docIds.length === 0) return map
+    const placeholders = docIds.map(() => '?').join(',')
+    const rows = await queryMany<{ docId: string; versionId: string }>(
+      `SELECT v.doc_id AS docId, v.id AS versionId
+         FROM t_dsh_knowledge_document_versions v
+         JOIN t_dsh_knowledge_documents d ON d.id = v.doc_id AND d.current_version = v.version
+        WHERE v.doc_id IN (${placeholders})`,
+      docIds)
+    for (const r of rows) map.set(r.docId, r.versionId)
+    return map
+  }
+
+  /** K-T7:docId → filename(溯源展示)。 */
+  async getDocFilenameMap(docIds: string[]): Promise<Map<string, string>> {
+    const map = new Map<string, string>()
+    if (docIds.length === 0) return map
+    const placeholders = docIds.map(() => '?').join(',')
+    const rows = await queryMany<{ docId: string; filename: string }>(
+      `SELECT id AS docId, filename FROM t_dsh_knowledge_documents WHERE id IN (${placeholders})`,
+      docIds)
+    for (const r of rows) map.set(r.docId, r.filename)
+    return map
+  }
+
+  /**
+   * K-T7:citation resolve —— ACL 硬性重校验(mount + ready + 可见性/creator + 版本一致)。
+   * 任一环节不满足 → undefined(调用方返回 404,不泄露任何元数据)。
+   */
+  async findCitationChunk(ctx: TenantContext, parts: { kbId: string; docId: string; versionId: string; chunkId: string }): Promise<{
+    chunkId: string; chunkIndex: number; snippet: string; kbId: string; kbName: string
+    documentId: string; documentTitle: string; documentVersionId: string
+  } | undefined> {
+    return queryOne(
+      `SELECT c.id AS chunkId, c.chunk_index AS chunkIndex, c.content AS snippet,
+              kb.id AS kbId, kb.name AS kbName,
+              d.id AS documentId, d.filename AS documentTitle, v.id AS documentVersionId
+         FROM t_dsh_knowledge_chunks c
+         JOIN t_dsh_knowledge_documents d ON d.id = c.doc_id AND d.status = 'ready'
+         JOIN t_dsh_knowledge_bases kb ON kb.id = c.kb_id
+         JOIN t_dsh_knowledge_document_versions v ON v.doc_id = c.doc_id AND v.id = ?
+         WHERE c.id = ? AND c.kb_id = ? AND c.doc_id = ?
+           AND d.current_version = v.version
+           AND (kb.creator_id = ? OR (kb.visibility = 'tenant' AND kb.tenant_id = ?) OR kb.visibility = 'public')
+           AND c.kb_id IN (SELECT kb_id FROM t_dsh_knowledge_mounts WHERE user_id = ?)`,
+      [parts.versionId, parts.chunkId, parts.kbId, parts.docId, ctx.userId, ctx.tenantId, ctx.userId])
+  }
+
   async listJobsForDoc(docId: string): Promise<Array<{ id: string; status: string; errorMessage: string | null }>> {
     return queryMany<{ id: string; status: string; errorMessage: string | null }>(
       `SELECT id, status, error_message AS errorMessage FROM t_dsh_knowledge_ingestion_jobs WHERE doc_id = ? ORDER BY created_at DESC`, [docId])
   }
 
-  async addChunks(docId: string, kbId: string, chunks: { content: string; index: number }[]): Promise<void> {
+  /** K-T5-lite:返回生成的 chunk id(供 embedding 阶段 VectorStore.upsert 定位)。 */
+  async addChunks(docId: string, kbId: string, chunks: { content: string; index: number }[]): Promise<Array<{ id: string; index: number }>> {
+    const created: Array<{ id: string; index: number }> = []
     for (const c of chunks) {
+      const id = randomUUID()
       await execute(
         `INSERT INTO t_dsh_knowledge_chunks (id, doc_id, kb_id, chunk_index, content) VALUES (?, ?, ?, ?, ?)`,
-        [randomUUID(), docId, kbId, c.index, c.content])
+        [id, docId, kbId, c.index, c.content])
+      created.push({ id, index: c.index })
     }
     await execute(`UPDATE t_dsh_knowledge_documents SET status = 'ready' WHERE id = ?`, [docId])
+    return created
   }
 
   async deleteChunksByDocId(docId: string): Promise<void> {
@@ -108,13 +179,26 @@ export class KnowledgeRepository {
     return row?.name ?? null
   }
 
+  /** K-T6-FINAL:runtime knowledgeBase 名称 → kbId(租户内;不存在 → null)。 */
+  async findBaseIdByName(tenantId: string, name: string): Promise<string | null> {
+    const row = await queryOne<{ id: string }>(
+      `SELECT id FROM t_dsh_knowledge_bases WHERE tenant_id = ? AND name = ?`, [tenantId, name])
+    return row?.id ?? null
+  }
+
+  async getKbName(kbId: string): Promise<string | null> {
+    const row = await queryOne<{ name: string }>(`SELECT name FROM t_dsh_knowledge_bases WHERE id = ?`, [kbId])
+    return row?.name ?? null
+  }
+
   async getDocFilename(docId: string): Promise<string | null> {
     const row = await queryOne<{ filename: string }>(`SELECT filename FROM t_dsh_knowledge_documents WHERE id = ?`, [docId])
     return row?.filename ?? null
   }
 
   searchChunks(ctx: TenantContext, input: KbSearchInput): Promise<KbSearchResult> {
-    const params: SqlValue[] = [ctx.userId, ctx.tenantId, ctx.userId]
+    // 占位符顺序:mounts.user_id → bases.creator_id → bases.tenant_id(修复此前 userId/tenantId 互换导致检索恒空的问题)。
+    const params: SqlValue[] = [ctx.userId, ctx.userId, ctx.tenantId]
     let extra = ''
     if (input.kbId) { extra = ' AND c.kb_id = ?'; params.push(input.kbId) }
     if (input.q) { extra += ' AND c.content LIKE ?'; params.push(`%${input.q}%`) }

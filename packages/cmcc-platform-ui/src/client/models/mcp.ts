@@ -7,7 +7,7 @@
 import type { MCPConnector } from './types.js'
 import type { ResourceState } from './resource.js'
 import { runLoad } from './resource.js'
-import type { McpRuntimeStatus } from '../platform-api.js'
+import type { McpRuntimeStatus, McpTestResult } from '../platform-api.js'
 
 export interface McpApi {
   listConnectors(): Promise<{ connectors: MCPConnector[] }>
@@ -19,6 +19,7 @@ export interface McpApi {
   approveConnector(id: string): Promise<{ ok: true }>
   authorizeConnector(id: string): Promise<{ ok: true }>
   revokeConnector(id: string): Promise<{ ok: true }>
+  testConnector(id: string): Promise<McpTestResult>
   disableConnector(id: string): Promise<{ ok: true }>
   saveConnectorCredential(id: string, secret: string): Promise<{ ok: true; configured: true }>
   getMcpRuntimeStatus?(): Promise<McpRuntimeStatus>
@@ -77,6 +78,8 @@ export async function saveCredentialAndReload(api: McpApi, id: string, secret: s
   await api.saveConnectorCredential(id, secret)
   return loadMcp(api)
 }
+
+export type { McpTestResult } from '../platform-api.js'
 
 export function transportLabel(transport: string): string {
   return transport === 'stdio' ? 'stdio' : 'streamable-http'

@@ -110,6 +110,22 @@ export function registerMCPRoutes(app: FastifyInstance): void {
     }
   })
 
+  /** 连接测试(任务 02):启用前探针,只读 initialize+tools/list;不改审批/授权/投影。 */
+  app.post('/api/connectors/:id/test', async (req, reply) => {
+    if (!req.principal) return reply.code(401).send({ error: 'unauthenticated' })
+    const { id } = req.params as { id: string }
+    try {
+      return await mcpService.testConnection(toCtx(req.principal), id)
+    } catch (err) {
+      const msg = (err as Error).message
+      if (msg === 'not-found') return reply.code(404).send({ error: 'not-found' })
+      if (msg === 'stdio-test-unsupported' || msg === 'credential-control-characters' || msg.startsWith('url-rejected:') || msg === 'decrypt-failed' || msg === 'missing-encryption-key') {
+        return reply.code(400).send({ error: msg })
+      }
+      return reply.code(400).send({ error: 'test-failed' })
+    }
+  })
+
   app.get('/api/connectors/authorized', async (req, reply) => {
     if (!req.principal) return reply.code(401).send({ error: 'unauthenticated' })
     return { connectors: await mcpService.listAuthorized(toCtx(req.principal)) }

@@ -1,41 +1,31 @@
 import { StrictMode, useState, useEffect } from 'react'
 import type { FormEvent } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { UserRole } from '@dsh-platform/shared'
-import { login, getMe, logout } from './api.js'
-import { useHashRoute } from './router.js'
-import { AppShell } from './components/AppShell.js'
+import { login, getMe } from './api.js'
 import { BrandMark } from './components/BrandMark.js'
-import { DashboardPage } from './pages/DashboardPage.js'
-import { SessionsPage } from './pages/SessionsPage.js'
-import { WorkspacesPage } from './pages/WorkspacesPage.js'
-import { SkillsPage } from './pages/SkillsPage.js'
-import { KnowledgePage } from './pages/KnowledgePage.js'
-import { McpPage } from './pages/McpPage.js'
-import { MemoryPage } from './pages/MemoryPage.js'
 import './styles/tokens.css'
 
-interface CurrentUser {
-  displayName: string
-  role: UserRole
-}
-
-/** 登录成功后直接进入 dsh 操作界面(跳过平台首页中转)。 */
+/** 登录成功/已持有会话时直接进入的 dsh 操作界面(跳过平台首页中转)。 */
 const DSH_UI_URL: string = import.meta.env.VITE_DSH_UI_URL ?? 'http://localhost:8080/'
 
-function LoginView({ onLogin }: { onLogin: (user: CurrentUser) => void }): JSX.Element {
+/**
+ * Portal 仅作为登录门:登录成功或已持有平台会话即整页跳转 dsh UI。
+ * 首次进入时 Runtime 冷启动可能耗时数十秒,期间显示过渡屏,**绝不**渲染中转页。
+ */
+function LoginView(): JSX.Element {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [entered, setEntered] = useState(false)
 
   async function handleSubmit(e: FormEvent): Promise<void> {
     e.preventDefault(); setError(null); setBusy(true)
     try {
-      const res = await login(email, password)
-      onLogin({ displayName: res.displayName, role: res.role })
+      await login(email, password)
       // 平台会话已建立(sid cookie 跨 authority 共享);整页跳转到 dsh UI,
       // 由网关按 Host 反代到该用户的运行时实例。
+      setEntered(true)
       window.location.assign(DSH_UI_URL)
     } catch (err) {
       const code = (err as Error).message
@@ -46,6 +36,16 @@ function LoginView({ onLogin }: { onLogin: (user: CurrentUser) => void }): JSX.E
         : '登录失败，请稍后重试',
       )
     } finally { setBusy(false) }
+  }
+
+  if (entered) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, background: 'var(--cmcc-bg)' }}>
+        <BrandMark size={48} />
+        <p style={{ fontSize: 16, color: 'var(--cmcc-text)' }}>登录成功，正在进入工作台…</p>
+        <p style={{ fontSize: 13, color: 'var(--cmcc-text-secondary)' }}>首次启动工作台需要初始化运行时，请稍候</p>
+      </div>
+    )
   }
 
   return (
@@ -88,51 +88,23 @@ function LoginView({ onLogin }: { onLogin: (user: CurrentUser) => void }): JSX.E
   )
 }
 
-function AuthenticatedApp({ user, onLogout }: { user: CurrentUser; onLogout: () => void }): JSX.Element {
-  const { path, navigate } = useHashRoute()
-
-  return (
-    <AppShell role={user.role} displayName={user.displayName} currentPath={path} onNavigate={navigate} onLogout={onLogout}>
-      {renderPage(path, user, navigate)}
-    </AppShell>
-  )
-}
-
-function renderPage(path: string, user: CurrentUser, navigate: (p: string) => void): JSX.Element {
-  switch (path) {
-    case '/sessions': return <SessionsPage />
-    case '/workspaces': return <WorkspacesPage />
-    case '/skills': return <SkillsPage />
-    case '/knowledge': return <KnowledgePage />
-    case '/mcp': return <McpPage />
-    case '/memory': return <MemoryPage />
-    default: return <DashboardPage displayName={user.displayName} onNavigate={navigate} />
-  }
-}
-
 function App(): JSX.Element {
-  const [user, setUser] = useState<CurrentUser | null>(null)
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
     getMe()
       .then((u) => {
-        // 已持有平台会话:不再展示平台首页,直接整页跳转到 dsh UI。
+        // 已持有平台会话:直接整页跳转 dsh UI,不展示任何中转页。
         if (u !== null) { window.location.assign(DSH_UI_URL); return }
       })
       .catch(() => {})
       .finally(() => setReady(true))
   }, [])
 
-  const handleLogout = async (): Promise<void> => {
-    await logout()
-    setUser(null)
-    window.location.hash = ''
+  if (!ready) {
+    return <div style={{ padding: '80px', textAlign: 'center', color: 'var(--cmcc-text-secondary)' }}>加载中...</div>
   }
-
-  if (!ready) return <div style={{ padding: '80px', textAlign: 'center', color: 'var(--cmcc-text-secondary)' }}>加载中...</div>
-  if (user === null) return <LoginView onLogin={setUser} />
-  return <AuthenticatedApp user={user} onLogout={handleLogout} />
+  return <LoginView />
 }
 
 const labelStyle: React.CSSProperties = { display: 'block', fontSize: '14px', fontWeight: 500, color: 'var(--cmcc-text)', marginBottom: '6px' }

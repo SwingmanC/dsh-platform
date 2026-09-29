@@ -21,8 +21,38 @@ import type {
   MemorySearchResult,
   MemoryVisibility,
   Skill,
+  SkillImportPreflight,
   SkillListResult,
 } from './models/types.js'
+
+/** K-T3:Embedding Provider 配置视图(永不包含明文 key/envelope)。 */
+export interface EmbeddingConfigView {
+  provider: string
+  baseUrl: string
+  model: string
+  dims: number
+  hasKey: boolean
+  keyHint: string | null
+  lastTestAt: string | null
+  lastError: string | null
+}
+
+export interface EmbeddingConfigSaveInput {
+  provider: string
+  baseUrl: string
+  model: string
+  dims: number
+  apiKey: string
+}
+
+export interface EmbeddingTestResult {
+  ok: boolean
+  provider?: string
+  model?: string
+  dims?: number
+  latencyMs?: number
+  code?: string
+}
 
 /** Knowledge Runtime 投影状态(来自 Gateway 真实 evidence)。 */
 export interface KnowledgeRuntimeStatus {
@@ -45,6 +75,23 @@ export interface SkillRuntimeStatus {
   error: string | null
   skillCount: number
   generatedAt: string | null
+}
+
+/** MCP 连接测试结果(Gateway 侧一次性探针;错误消息已在服务端脱敏)。 */
+export interface McpTestResult {
+  ok: boolean
+  code?: string
+  message?: string
+  serverInfo?: Record<string, unknown> | null
+  toolCount?: number
+  tools?: Array<{
+    name: string
+    description: string | null
+    /** MCP-V1.1:JSON Schema 原样透传(只读展示)。 */
+    inputSchema?: Record<string, unknown>
+  }>
+  durationMs: number
+  authConfigured: boolean
 }
 
 /** MCP Runtime 投影状态(来自 Gateway 真实 evidence)。 */
@@ -209,8 +256,44 @@ export class PlatformApiClient {
     return this.mutate<Skill>('/api/skills', 'POST', input)
   }
 
+  /** SKILL-V1.1:作者编辑(owner-only;prompt 变更 → 新版本)。 */
+  updateSkill(id: string, input: { description?: string; prompt?: string; whenToUse?: string; modelInvocable?: boolean; userInvocable?: boolean }): Promise<{ ok: true; version?: string }> {
+    return this.mutate<{ ok: true; version?: string }>(`/api/skills/${encodeURIComponent(id)}`, 'PUT', input)
+  }
+
+  /** SKILL-V1.1:版本历史(owner-only)。 */
+  getSkillVersions(id: string): Promise<{ versions: Array<{ version: string; createdAt: string }> }> {
+    return this.request<{ versions: Array<{ version: string; createdAt: string }> }>(`/api/skills/${encodeURIComponent(id)}/versions`)
+  }
+
+  /** SKILL-V1.3:SKILL.md Import preflight(multipart;无 DB 写入)。 */
+  importSkillPreflight(file: File): Promise<SkillImportPreflight> {
+    return this.uploadFile<SkillImportPreflight>('/api/skills/import/preflight', file)
+  }
+
+  /** SKILL-V1.3:SKILL.md Import(multipart;成功 → draft Skill)。 */
+  importSkill(file: File): Promise<Skill> {
+    return this.uploadFile<Skill>('/api/skills/import', file)
+  }
+
+  /** 复用统一 fetch 通道;FormData 不设 content-type(浏览器自动补 boundary)。 */
+  private uploadFile<T>(url: string, file: File): Promise<T> {
+    const form = new FormData()
+    form.append('file', file, file.name)
+    return this.request<T>(url, {
+      method: 'POST',
+      headers: { 'x-csrf-token': csrfToken() },
+      body: form,
+    })
+  }
+
   publishSkill(id: string): Promise<{ ok: true }> {
     return this.mutate<{ ok: true }>(`/api/skills/${encodeURIComponent(id)}/publish`, 'POST')
+  }
+
+  /** 撤回(owner-only;published→draft,已安装副本经投影重建退出 Runtime)。 */
+  unpublishSkill(id: string): Promise<{ ok: true }> {
+    return this.mutate<{ ok: true }>(`/api/skills/${encodeURIComponent(id)}/unpublish`, 'POST')
   }
 
   installSkill(id: string): Promise<{ ok: true }> {
@@ -255,9 +338,36 @@ export class PlatformApiClient {
     return this.request<KnowledgeRuntimeStatus>('/api/knowledge/runtime-status')
   }
 
-  /** 上传文档到 KB(按文本内容上传)。 */
+  /** 上传文档到 KB(纯文本内容上传;txt/md 既有链路)。 */
   uploadDocument(kbId: string, filename: string, content: string): Promise<KbDocument> {
     return this.mutate<KbDocument>(`/api/knowledge-bases/${encodeURIComponent(kbId)}/documents`, 'POST', { filename, content })
+  }
+
+  // --- K-T3:Embedding Provider 配置(tenant_admin only) ---
+  getEmbeddingConfig(): Promise<EmbeddingConfigView> {
+    return this.request<EmbeddingConfigView>('/api/knowledge/embedding-config')
+  }
+
+  saveEmbeddingConfig(input: EmbeddingConfigSaveInput): Promise<EmbeddingConfigView> {
+    return this.mutate<EmbeddingConfigView>('/api/knowledge/embedding-config', 'PUT', input)
+  }
+
+  testEmbeddingConfig(): Promise<EmbeddingTestResult> {
+    return this.mutate<EmbeddingTestResult>('/api/knowledge/embedding-config/test', 'POST')
+  }
+
+  /** K-T1:PDF/DOCX multipart 上传(同一授权/存储/ingestion 链路;解析失败返回 422 受控错误码)。 */
+  async uploadDocumentFile(kbId: string, file: File): Promise<KbDocument> {
+    const fd = new FormData()
+    fd.append('file', file)
+    const res = await fetch(`/api/knowledge-bases/${encodeURIComponent(kbId)}/files`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'x-csrf-token': csrfToken() },
+      body: fd,
+    })
+    if (!res.ok) throw new PlatformApiError(res.status, await parseErrorCode(res))
+    return (await res.json()) as KbDocument
   }
 
   // --- MCP ---
@@ -279,6 +389,11 @@ export class PlatformApiClient {
 
   revokeConnector(id: string): Promise<{ ok: true }> {
     return this.mutate<{ ok: true }>(`/api/connectors/${encodeURIComponent(id)}/authorize`, 'DELETE')
+  }
+
+  /** 连接测试(启用前探针;失败时也以 200 返回结构化结果,错误消息已脱敏)。 */
+  testConnector(id: string): Promise<McpTestResult> {
+    return this.mutate<McpTestResult>(`/api/connectors/${encodeURIComponent(id)}/test`, 'POST')
   }
 
   disableConnector(id: string): Promise<{ ok: true }> {

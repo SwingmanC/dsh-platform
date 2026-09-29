@@ -186,6 +186,14 @@ export interface Skill {
   installCount: number
   createdAt: string
   updatedAt: string
+  /** SKILL-V1.2:DSH whenToUse(模型路由提示)。 */
+  whenToUse: string | null
+  /** SKILL-V1.2:模型可调用(canonical;对应 !disable-model-invocation)。 */
+  modelInvocable: boolean
+  /** SKILL-V1.2:用户可调用(/name)。 */
+  userInvocable: boolean
+  /** SKILL-V1.1:当前请求者是否为该 skill 的 creator(路由计算,服务端事实)。 */
+  isOwner?: boolean
 }
 
 export interface SkillVersion {
@@ -199,6 +207,18 @@ export interface SkillVersion {
   packageLocation: string | null
   sourceCommit: string | null
   createdAt: string
+}
+
+/** SKILL-V1.3:SKILL.md Import preflight 预览(valid=false 时 canonical 字段为 null)。 */
+export interface SkillImportPreflight {
+  valid: boolean
+  name: string | null
+  description: string | null
+  whenToUse: string | null
+  modelInvocable: boolean | null
+  userInvocable: boolean | null
+  warnings: string[]
+  errors: string[]
 }
 
 export interface SkillInstallation {
@@ -252,6 +272,17 @@ export interface KbDocument {
   updatedAt: string
 }
 
+/** K-T7:检索结果引用元数据(稳定 ID;resolve 需重新过 ACL)。 */
+export interface CitationMeta {
+  citationId: string
+  kbId: string
+  documentId: string
+  documentVersionId: string
+  chunkId: string
+  chunkIndex: number
+  documentTitle: string
+}
+
 export interface KbChunk {
   id: string
   docId: string
@@ -260,6 +291,8 @@ export interface KbChunk {
   content: string
   tokenCount: number | null
   createdAt: string
+  /** K-T7:引用元数据(检索/回退路径统一附带;不存在时缺省)。 */
+  citation?: CitationMeta
 }
 
 export interface KbSearchInput {
@@ -300,4 +333,10 @@ export interface MCPConnector {
   lastTestAt: string | null
   createdAt: string
   updatedAt: string
+  /** MCP-V1.1:最后一次成功 discovery 的工具目录(管理面展示;非授权策略)。 */
+  discoveredTools?: Array<{
+    name: string
+    description: string | null
+    inputSchema: Record<string, unknown>
+  }>
 }

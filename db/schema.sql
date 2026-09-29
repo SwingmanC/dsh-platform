@@ -227,6 +227,9 @@ CREATE TABLE t_dsh_skills (
   slug            VARCHAR(128)  NOT NULL,
   description     TEXT,
   prompt          TEXT,                         -- AI 提示词/技能定义
+  when_to_use     VARCHAR(512) NULL,            -- SKILL-V1.2:DSH whenToUse
+  model_invocable TINYINT(1)    NOT NULL DEFAULT 1,  -- SKILL-V1.2:模型可调用
+  user_invocable  TINYINT(1)    NOT NULL DEFAULT 1,  -- SKILL-V1.2:用户可调用
   tools           JSON,                         -- 工具白名单
   visibility      VARCHAR(20)   NOT NULL DEFAULT 'private', -- 'private' | 'tenant' | 'public'
   status          VARCHAR(20)   NOT NULL DEFAULT 'draft',   -- 'draft' | 'pending_review' | 'published' | 'rejected' | 'suspended' | 'deprecated'
@@ -251,6 +254,9 @@ CREATE TABLE t_dsh_skill_versions (
   skill_id        CHAR(36)      NOT NULL,
   version         VARCHAR(32)   NOT NULL,
   prompt          TEXT          NOT NULL,
+  when_to_use     VARCHAR(512)  NULL,         -- SKILL-V1.2:版本时点 whenToUse
+  model_invocable TINYINT(1)    NOT NULL DEFAULT 1,
+  user_invocable  TINYINT(1)    NOT NULL DEFAULT 1,
   tools           JSON,
   manifest        JSON,
   content_hash    VARCHAR(64),
@@ -337,7 +343,7 @@ CREATE TABLE t_dsh_knowledge_documents (
   filename        VARCHAR(256)  NOT NULL,
   filepath        VARCHAR(1024) NOT NULL,
   file_size       BIGINT        NOT NULL DEFAULT 0,
-  content_type    VARCHAR(64),
+  content_type    VARCHAR(128) NOT NULL DEFAULT '',  -- K-T1:64→128 扩容(容纳 71 字符 DOCX MIME)
   status          VARCHAR(20)   NOT NULL DEFAULT 'uploaded',  -- 'uploaded'|'parsing'|'chunking'|'ready'|'failed'|'archived'
   current_version INT           NOT NULL DEFAULT 1,
   created_at      DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
@@ -403,6 +409,24 @@ CREATE TABLE t_dsh_knowledge_ingestion_jobs (
   CONSTRAINT fk_job_kb FOREIGN KEY (kb_id) REFERENCES t_dsh_knowledge_bases(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- Embedding Provider 配置(K-T3;每租户一套 active config)
+CREATE TABLE t_dsh_rag_embedding_config (
+  id               CHAR(36)      PRIMARY KEY,
+  tenant_id        CHAR(36)      NOT NULL,
+  provider         VARCHAR(32)   NOT NULL DEFAULT 'openai-compatible',
+  base_url         VARCHAR(512)  NOT NULL,
+  model            VARCHAR(128)  NOT NULL,
+  dims             INT           NOT NULL,
+  api_key_envelope VARBINARY(1024) NOT NULL,           -- credential-store AES-256-GCM envelope,不存明文
+  key_hint         VARCHAR(8)    NOT NULL DEFAULT '',  -- 尾 4 位展示用
+  last_test_at     DATETIME(3)   NULL,
+  last_error       VARCHAR(255)  NULL,
+  created_at       DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at       DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  UNIQUE KEY uk_rag_embed_tenant (tenant_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+
 -- MCP 连接器(Phase 06)
 CREATE TABLE t_dsh_mcp_connectors (
   id              CHAR(36)      PRIMARY KEY,
@@ -417,6 +441,7 @@ CREATE TABLE t_dsh_mcp_connectors (
   status          VARCHAR(20)   NOT NULL DEFAULT 'active',
   risk_level      VARCHAR(20)   NOT NULL DEFAULT 'low',    -- 'low' | 'medium' | 'high'
   tool_count      INT           NOT NULL DEFAULT 0,
+  tools_snapshot  JSON NULL,                                -- MCP-V1.1:最后一次成功 discovery 的工具目录(name/description/inputSchema)
   -- stdio 配置(仅核准模板)
   command         VARCHAR(512),
   args_template   JSON,

@@ -3,13 +3,20 @@ import type { SqlValue } from '../db.js'
 import { randomUUID } from 'node:crypto'
 import { execute, queryMany, queryOne } from '../db.js'
 
-interface McpRow { id: string; tenantId: string; creatorId: string; name: string; description: string | null; serverName: string; transport: string; scope: string; visibility: string; status: string; riskLevel: string; toolCount: number; command: string | null; endpointUrl: string | null; authType: string | null; credentialRef: string | null; approved: number; approvedBy: string | null; lastTestAt: string | null; createdAt: string; updatedAt: string }
+interface McpRow { id: string; tenantId: string; creatorId: string; name: string; description: string | null; serverName: string; transport: string; scope: string; visibility: string; status: string; riskLevel: string; toolCount: number; command: string | null; endpointUrl: string | null; authType: string | null; credentialRef: string | null; toolsSnapshot: string | null; approved: number; approvedBy: string | null; lastTestAt: string | null; createdAt: string; updatedAt: string }
 const COLS = `id, tenant_id AS tenantId, creator_id AS creatorId, name, description,
   server_name AS serverName, transport, scope, visibility, status,
   risk_level AS riskLevel, tool_count AS toolCount, command,
   endpoint_url AS endpointUrl, auth_type AS authType, credential_ref AS credentialRef,
-  approved, approved_by AS approvedBy, last_test_at AS lastTestAt,
+  tools_snapshot AS toolsSnapshot, approved, approved_by AS approvedBy, last_test_at AS lastTestAt,
   created_at AS createdAt, updated_at AS updatedAt`
+
+/** MCP-V1.1:discovery snapshot 工具条目(仅管理面展示;非授权策略)。 */
+export interface DiscoveredTool {
+  name: string
+  description: string | null
+  inputSchema: Record<string, unknown>
+}
 
 /** 投影所需的 connector 行(含 projection 决策字段)。 */
 export interface ProjectableConnector {
@@ -18,8 +25,20 @@ export interface ProjectableConnector {
   endpointUrl: string | null; authType: string | null
 }
 
-function toConnector(r: McpRow): MCPConnector {
-  return { ...r, transport: r.transport as MCPTransport, scope: r.scope as MCPScope, riskLevel: r.riskLevel as MCPRiskLevel, approved: r.approved === 1, toolCount: r.toolCount ?? 0 }
+function toConnector(r: McpRow): MCPConnector & { discoveredTools?: DiscoveredTool[] } {
+  const base = { ...r, transport: r.transport as MCPTransport, scope: r.scope as MCPScope, riskLevel: r.riskLevel as MCPRiskLevel, approved: r.approved === 1, toolCount: r.toolCount ?? 0 }
+  const withTools: MCPConnector & { discoveredTools?: DiscoveredTool[] } = base
+  // mysql2 对 JSON 列返回已解析对象;兼容历史字符串形态
+  const snap = r.toolsSnapshot as unknown
+  if (Array.isArray(snap)) {
+    withTools.discoveredTools = snap as DiscoveredTool[]
+  } else if (typeof snap === 'string' && snap !== '') {
+    try {
+      const parsed = JSON.parse(snap)
+      if (Array.isArray(parsed)) withTools.discoveredTools = parsed as DiscoveredTool[]
+    } catch { /* 快照损坏:不阻塞列表 */ }
+  }
+  return withTools
 }
 
 export class MCPRepository {
@@ -169,6 +188,17 @@ export class MCPRepository {
 
   async setToolCount(connectorId: string, count: number): Promise<void> {
     await execute(`UPDATE t_dsh_mcp_connectors SET tool_count = ? WHERE id = ?`, [count, connectorId])
+  }
+
+  /** MCP-V1.1:持久化最后一次成功 discovery 的工具目录(replace 语义)。 */
+  async setToolsSnapshot(connectorId: string, tools: unknown[]): Promise<void> {
+    await execute(`UPDATE t_dsh_mcp_connectors SET tools_snapshot = ? WHERE id = ?`,
+      [JSON.stringify(tools) as unknown as SqlValue, connectorId])
+  }
+
+  /** 连接测试时间戳(信息性;不影响审批/授权状态)。 */
+  async touchLastTest(connectorId: string): Promise<void> {
+    await execute(`UPDATE t_dsh_mcp_connectors SET last_test_at = UTC_TIMESTAMP(3) WHERE id = ?`, [connectorId])
   }
 }
 

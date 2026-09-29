@@ -18,6 +18,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { config } from './config.js'
+import { validateEgressUrl } from './egress.js'
 import { mcpRepository } from './repositories/mcp-repository.js'
 import type { ProjectableConnector } from './repositories/mcp-repository.js'
 
@@ -79,25 +80,12 @@ function currentEgressPolicy(): McpEgressPolicy {
   return { allowedOrigins: config.mcp.allowedOrigins, allowLoopback: config.mcp.allowLoopback }
 }
 
-/** 校验 streamable-http URL 是否符合 SSRF / egress policy。 */
+/** 校验 streamable-http URL 是否符合 SSRF / egress policy(实现抽取至共享 egress helper,K-T3)。 */
 export function validateMcpUrl(
   rawUrl: string,
   policy: McpEgressPolicy = currentEgressPolicy(),
 ): { ok: true; url: string } | { ok: false; reason: string } {
-  let parsed: URL
-  try {
-    parsed = new URL(rawUrl)
-  } catch {
-    return { ok: false, reason: 'invalid-url' }
-  }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return { ok: false, reason: 'invalid-scheme' }
-  if (parsed.username !== '' || parsed.password !== '') return { ok: false, reason: 'userinfo-not-allowed' }
-  if (parsed.hash !== '') return { ok: false, reason: 'fragment-not-allowed' }
-  const origin = parsed.origin
-  const loopback = parsed.hostname === '127.0.0.1' || parsed.hostname === 'localhost' || parsed.hostname === '::1'
-  if (policy.allowedOrigins.includes(origin)) return { ok: true, url: parsed.toString() }
-  if (loopback && policy.allowLoopback) return { ok: true, url: parsed.toString() }
-  return { ok: false, reason: 'origin-not-allowed' }
+  return validateEgressUrl(rawUrl, policy)
 }
 
 /**

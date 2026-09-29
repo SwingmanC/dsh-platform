@@ -16,6 +16,9 @@ export interface Skill {
   slug: string
   description: string | null
   prompt: string | null
+  whenToUse?: string | null
+  modelInvocable?: boolean
+  userInvocable?: boolean
   visibility: SkillVisibility
   status: SkillStatus
   latestVersion: string
@@ -24,11 +27,25 @@ export interface Skill {
   installCount: number
   createdAt: string
   updatedAt: string
+  /** SKILL-V1.1:当前请求者是否为 creator(服务端计算)。 */
+  isOwner?: boolean
 }
 
 export interface SkillListResult {
   skills: Skill[]
   total: number
+}
+
+/** SKILL-V1.3:SKILL.md Import preflight 预览(valid=false 时 canonical 字段为 null)。 */
+export interface SkillImportPreflight {
+  valid: boolean
+  name: string | null
+  description: string | null
+  whenToUse: string | null
+  modelInvocable: boolean | null
+  userInvocable: boolean | null
+  warnings: string[]
+  errors: string[]
 }
 
 export type KbVisibility = 'personal' | 'tenant'
@@ -60,6 +77,16 @@ export interface KbDocument {
   updatedAt: string
 }
 
+export interface CitationMeta {
+  citationId: string
+  kbId: string
+  documentId: string
+  documentVersionId: string
+  chunkId: string
+  chunkIndex: number
+  documentTitle: string
+}
+
 export interface KbChunk {
   id: string
   docId: string
@@ -68,6 +95,7 @@ export interface KbChunk {
   content: string
   tokenCount: number | null
   createdAt: string
+  citation?: CitationMeta
 }
 
 export interface KbSearchResult {
@@ -100,6 +128,12 @@ export interface MCPConnector {
   lastTestAt: string | null
   createdAt: string
   updatedAt: string
+  /** MCP-V1.1:最后一次成功 discovery 的工具目录(管理面展示;非授权策略)。 */
+  discoveredTools?: Array<{
+    name: string
+    description: string | null
+    inputSchema: Record<string, unknown>
+  }>
 }
 
 export type MemoryVisibility = 'personal' | 'tenant_shared'

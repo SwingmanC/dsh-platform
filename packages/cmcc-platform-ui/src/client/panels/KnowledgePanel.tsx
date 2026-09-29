@@ -41,17 +41,57 @@ export function KnowledgePanel(): React.ReactElement {
 
   const afterMutation = (next: Awaited<ReturnType<typeof loadKnowledge>>): void => { setState(next) }
 
+  // --- K-T3:Embedding Provider 配置(仅 tenant_admin;非管理员 403 时自动隐藏) ---
+  const [showEmbedding, setShowEmbedding] = React.useState(false)
+  const [emb, setEmb] = React.useState<{
+    loaded: boolean; visible: boolean; provider: string; baseUrl: string; model: string
+    dims: string; apiKey: string; hasKey: boolean; keyHint: string | null
+    status: string | null; error: string | null
+  }>({ loaded: false, visible: false, provider: 'openai-compatible', baseUrl: '', model: '', dims: '', apiKey: '', hasKey: false, keyHint: null, status: null, error: null })
+  const loadEmbedding = (): void => {
+    platformApi.getEmbeddingConfig()
+      .then((v) => setEmb((s) => ({
+        ...s, loaded: true, visible: true, provider: v.provider, baseUrl: v.baseUrl, model: v.model,
+        dims: String(v.dims), hasKey: v.hasKey, keyHint: v.keyHint, apiKey: '',
+      })))
+      .catch(() => setEmb((s) => ({ ...s, loaded: true, visible: false })))
+  }
+  const openEmbedding = (): void => {
+    setShowEmbedding((v) => !v)
+    if (!emb.loaded) loadEmbedding()
+  }
+  const saveEmbedding = async (): Promise<void> => {
+    setEmb((s) => ({ ...s, status: null, error: null }))
+    const view = await platformApi.saveEmbeddingConfig({
+      provider: emb.provider, baseUrl: emb.baseUrl.trim(), model: emb.model.trim(),
+      dims: Number(emb.dims), apiKey: emb.apiKey.trim(),
+    })
+    setEmb((s) => ({ ...s, loaded: true, provider: view.provider, baseUrl: view.baseUrl, model: view.model, dims: String(view.dims), hasKey: view.hasKey, keyHint: view.keyHint, apiKey: '', status: 'saved' }))
+  }
+  const testEmbedding = async (): Promise<void> => {
+    setEmb((s) => ({ ...s, status: null, error: null }))
+    const r = await platformApi.testEmbeddingConfig()
+    if (r.ok) setEmb((s) => ({ ...s, status: `连接成功 · dims=${r.dims} · ${r.latencyMs}ms` }))
+    else setEmb((s) => ({ ...s, status: `测试失败:${r.code ?? 'unknown'}` }))
+  }
+
   const handleUpload = async (kbId: string): Promise<void> => {
     const input = document.createElement('input')
     input.type = 'file'
-    input.accept = '.txt,.md,text/plain,text/markdown'
+    input.accept = '.txt,.md,.pdf,.docx,text/plain,text/markdown,application/pdf'
     input.onchange = async () => {
       const file = input.files?.[0]
       if (!file) return
       setUploadingKb(kbId)
       try {
-        const content = await file.text()
-        await platformApi.uploadDocument(kbId, file.name, content)
+        const lower = file.name.toLowerCase()
+        if (lower.endsWith('.pdf') || lower.endsWith('.docx')) {
+          // K-T1:二进制文档走 multipart 通道(txt/md 保持既有 JSON 上传)。
+          await platformApi.uploadDocumentFile(kbId, file)
+        } else {
+          const content = await file.text()
+          await platformApi.uploadDocument(kbId, file.name, content)
+        }
         await reload()
         if (selectedKb === kbId) docs.reload()
       } catch (err) {
@@ -90,8 +130,45 @@ export function KnowledgePanel(): React.ReactElement {
         <button type="button" style={buttonStyle()} onClick={() => setShowCreate((v) => !v)}>
           {showCreate ? '取消' : '新建知识库'}
         </button>
+        <button type="button" style={buttonStyle('ghost')} onClick={openEmbedding}>
+          {showEmbedding ? '收起 Embedding 配置' : 'Embedding 配置'}
+        </button>
         {mutation.pending && <span style={{ fontSize: 12, color: 'var(--dsw-alias-label-secondary, #5b6473)' }}>处理中…</span>}
       </PanelToolbar>
+
+      {showEmbedding && emb.visible && (
+        <PanelContent>
+          <Card>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 640, fontSize: 13 }}>
+              <div style={{ fontWeight: 600 }}>Embedding Provider(租户级 · 仅管理员)</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <TextInput value={emb.provider} readOnly />
+                <TextInput placeholder="Base URL(https://...)" value={emb.baseUrl} onChange={(e) => setEmb((s) => ({ ...s, baseUrl: e.target.value }))} />
+                <TextInput placeholder="Model" value={emb.model} onChange={(e) => setEmb((s) => ({ ...s, model: e.target.value }))} />
+                <TextInput placeholder="Dimensions(如 1024)" value={emb.dims} onChange={(e) => setEmb((s) => ({ ...s, dims: e.target.value }))} />
+                <TextInput
+                  type="password"
+                  placeholder={emb.hasKey ? `••••${emb.keyHint ?? ''}(已保存)` : 'API Key'}
+                  value={emb.apiKey}
+                  onChange={(e) => setEmb((s) => ({ ...s, apiKey: e.target.value }))}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" style={buttonStyle()} disabled={mutation.pending} onClick={() => mutation.run(saveEmbedding, () => setEmb((s) => ({ ...s, status: 'saved' })))}>
+                  保存
+                </button>
+                <button type="button" style={buttonStyle('ghost')} disabled={mutation.pending || emb.baseUrl.trim() === ''} onClick={() => mutation.run(testEmbedding, () => {})}>
+                  测试连接
+                </button>
+              </div>
+              {emb.status !== null && <div style={{ fontSize: 12, color: emb.status.startsWith('测试失败') ? 'var(--dsw-alias-status-danger, #c0392b)' : 'var(--dsw-alias-status-success, #1e7e34)' }}>{emb.status}</div>}
+              <div style={{ fontSize: 11, color: 'var(--dsw-alias-label-secondary, #5b6473)' }}>
+                保存后仍使用关键词检索;Embedding 能力不影响现有 LIKE Search。
+              </div>
+            </div>
+          </Card>
+        </PanelContent>
+      )}
 
       <PanelContent>
         <div style={{ marginBottom: 8, fontSize: 13 }}>知识库</div>
@@ -178,7 +255,9 @@ export function KnowledgePanel(): React.ReactElement {
           <Card key={chunk.id}>
             <div style={{ fontSize: 13, whiteSpace: 'pre-wrap' }}>{chunk.content}</div>
             <div style={{ marginTop: 4, fontSize: 11, color: 'var(--dsw-alias-label-secondary, #5b6473)' }}>
-              kb={chunk.kbId} · chunk#{chunk.chunkIndex}
+              {chunk.citation !== undefined
+                ? `来源:${chunk.citation.documentTitle} · 知识库:${chunk.citation.kbId}`
+                : `kb=${chunk.kbId} · chunk#${chunk.chunkIndex}`}
             </div>
           </Card>
         ))}

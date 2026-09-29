@@ -170,6 +170,23 @@ export const config = {
   knowledge: {
     storageRoot: path.resolve(repoRoot, str('PLATFORM_KNOWLEDGE_STORAGE_ROOT', './var/knowledge-storage')),
     projectionsRoot: path.resolve(repoRoot, str('PLATFORM_KNOWLEDGE_PROJECTIONS_ROOT', './var/projections')),
+    // 分块参数(K-T2-lite):字符长度单位;非法配置回退默认并告警,不阻断启动。
+    chunkSize: (() => {
+      const v = num('KB_CHUNK_SIZE', 800)
+      if (!Number.isFinite(v) || v <= 0) {
+        process.stderr.write('[config] invalid KB_CHUNK_SIZE; falling back to 800\n')
+        return 800
+      }
+      return Math.floor(v)
+    })(),
+    chunkOverlap: (() => {
+      const v = num('KB_CHUNK_OVERLAP', 120)
+      if (!Number.isFinite(v) || v < 0) {
+        process.stderr.write('[config] invalid KB_CHUNK_OVERLAP; falling back to 120\n')
+        return 120
+      }
+      return Math.floor(v)
+    })(),
   },
 
   /**
@@ -186,6 +203,8 @@ export const config = {
       .split(',').map((s) => s.trim()).filter((s) => s !== ''),
     projectionsRoot: path.resolve(repoRoot, str('PLATFORM_MCP_PROJECTIONS_ROOT', './var/projections')),
     toolCallTimeoutMs: num('PLATFORM_MCP_TOOL_TIMEOUT_MS', 60_000),
+    // 连接测试(启用前探针)硬超时;与 Runtime 内 toolCallTimeout 语义分离。
+    testTimeoutMs: num('PLATFORM_MCP_TEST_TIMEOUT_MS', 10_000),
   },
 
   /**

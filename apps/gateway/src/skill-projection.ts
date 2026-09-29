@@ -19,7 +19,8 @@ import { config } from './config.js'
 import { skillRepository } from './repositories/skill-repository.js'
 
 /** DSH 0.1.5 skill name 语法(kebab-case)。 */
-const SKILL_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+/** DSH 0.1.5 skill name 语法(kebab-case;SKILL-V1.3 Import 复用同一 source of truth)。 */
+export const SKILL_NAME_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 const UUID_RE = /^[0-9a-fA-F-]{36}$/
 
 export const PROJECTION_SCHEMA_VERSION = 1 as const
@@ -124,7 +125,11 @@ export async function buildSkillProjection(tenantId: string, userId: string): Pr
       id: row.id,
       name,
       description: row.description ?? row.name,
-      invocation: { modelInvocable: true, userInvocable: true },
+      ...(row.whenToUse !== null && row.whenToUse !== '' ? { whenToUse: row.whenToUse } : {}),
+      invocation: {
+        modelInvocable: row.modelInvocable,
+        userInvocable: row.userInvocable,
+      },
       version: row.version,
       bodyFile: `bodies/${row.id}.md`,
     })

@@ -13,7 +13,7 @@ import {
   disableConnectorAndReload, loadMcp, mcpRuntimeStateLabel, revokeConnectorAndReload,
   riskLabel, saveCredentialAndReload, transportLabel,
 } from '../models/mcp.js'
-import type { McpPanelData } from '../models/mcp.js'
+import type { McpPanelData, McpTestResult } from '../models/mcp.js'
 import { useAsyncState, useMutation } from '../components/hooks.js'
 import {
   Card, Chip, PanelContent, PanelEmpty, PanelError, PanelHeader, PanelLoading,
@@ -30,6 +30,7 @@ export function McpPanel(): React.ReactElement {
   const [scope, setScope] = React.useState('user')
   const [riskLevel, setRiskLevel] = React.useState('low')
   const [credentialFor, setCredentialFor] = React.useState<string | null>(null)
+  const [catalogFor, setCatalogFor] = React.useState<string | null>(null)
   const [secret, setSecret] = React.useState('')
 
   const { state, reload, setState } = useAsyncState<McpPanelData>(() => loadMcp(platformApi), [])
@@ -130,6 +131,7 @@ export function McpPanel(): React.ReactElement {
               agentConnected={connected}
               pending={mutation.pending}
               credentialOpen={credentialFor === c.id}
+              catalogOpen={catalogFor === c.id}
               secret={secret}
               onSecretChange={setSecret}
               onApprove={() => mutation.run(() => approveConnectorAndReload(platformApi, c.id), afterMutation)}
@@ -137,6 +139,8 @@ export function McpPanel(): React.ReactElement {
               onRevoke={() => mutation.run(() => revokeConnectorAndReload(platformApi, c.id), afterMutation)}
               onDisable={() => mutation.run(() => disableConnectorAndReload(platformApi, c.id), afterMutation)}
               onToggleCredential={() => { setCredentialFor(credentialFor === c.id ? null : c.id); setSecret('') }}
+              onToggleCatalog={() => setCatalogFor(catalogFor === c.id ? null : c.id)}
+              onTested={() => reload()}
               onSaveCredential={() => mutation.run(
                 () => saveCredentialAndReload(platformApi, c.id, secret),
                 (next) => { afterMutation(next); setCredentialFor(null); setSecret('') },
@@ -155,6 +159,7 @@ function ConnectorCard(props: {
   agentConnected: boolean
   pending: boolean
   credentialOpen: boolean
+  catalogOpen: boolean
   secret: string
   onSecretChange: (v: string) => void
   onApprove: () => void
@@ -162,9 +167,26 @@ function ConnectorCard(props: {
   onRevoke: () => void
   onDisable: () => void
   onToggleCredential: () => void
+  onToggleCatalog: () => void
+  onTested: () => void
   onSaveCredential: () => void
 }): React.ReactElement {
   const { connector: c } = props
+  // 连接测试(启用前探针):本地状态,与面板级 mutation 互不阻塞。
+  const [testing, setTesting] = React.useState(false)
+  const [testResult, setTestResult] = React.useState<McpTestResult | null>(null)
+  // MCP-V1.1:持久化 discovery snapshot 展开(刷新后仍可见,数据源 = connector DTO)
+  const [showCatalog, setShowCatalog] = React.useState(false)
+  const runTest = (): void => {
+    setTesting(true)
+    setTestResult(null)
+    platformApi.testConnector(c.id)
+      .then((r) => setTestResult(r))
+      .catch((e: unknown) => setTestResult({
+        ok: false, code: 'request-error', message: (e as Error).message, durationMs: 0, authConfigured: false,
+      }))
+      .finally(() => { setTesting(false); props.onTested() })
+  }
   return (
     <Card>
       <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
@@ -183,6 +205,12 @@ function ConnectorCard(props: {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
+          <button type="button" style={buttonStyle('ghost')} disabled={testing || props.pending} onClick={runTest}>
+            {testing ? '测试中…' : '测试'}
+          </button>
+          <button type="button" style={buttonStyle('ghost')} disabled={props.pending} onClick={props.onToggleCatalog}>
+            {props.catalogOpen ? '收起目录' : `工具目录${(props.connector.discoveredTools?.length ?? 0) > 0 ? `(${props.connector.discoveredTools!.length})` : ''}`}
+          </button>
           {!c.approved && (
             <button type="button" style={buttonStyle('ghost')} disabled={props.pending} onClick={props.onApprove}>审批</button>
           )}
@@ -200,6 +228,12 @@ function ConnectorCard(props: {
           )}
         </div>
       </div>
+      {props.catalogOpen && (
+        <ToolCatalogView
+          tools={c.discoveredTools ?? []}
+          emptyText="No tools discovered(先执行「测试」完成 discovery)"
+        />
+      )}
       {props.credentialOpen && (
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
           <TextInput
@@ -213,6 +247,73 @@ function ConnectorCard(props: {
           </button>
         </div>
       )}
+      {testResult !== null && <TestResultView result={testResult} />}
     </Card>
+  )
+}
+
+/** 连接测试结果(脱敏后的错误消息 / 工具预览)。 */
+function TestResultView(props: { result: McpTestResult }): React.ReactElement {
+  const r = props.result
+  if (!r.ok) {
+    return (
+      <div style={{ marginTop: 8, fontSize: 12, color: 'var(--dsw-alias-status-danger, #c0392b)' }}>
+        {`连接失败:${r.message ?? r.code ?? 'unknown'}(${r.durationMs}ms)`}
+      </div>
+    )
+  }
+  const tools = r.tools ?? []
+  const shown = tools.slice(0, 12)
+  return (
+    <div style={{ marginTop: 8, fontSize: 12, color: 'var(--dsw-alias-status-success, #1e7e34)' }}>
+      <div>
+        {`连接成功 · 工具 ${r.toolCount ?? tools.length} 个 · ${r.durationMs}ms`}
+        {r.authConfigured ? ' · 已携带凭据' : ' · 未携带凭据'}
+      </div>
+      {shown.length > 0 && (
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+          {shown.map((t) => (
+            <span
+              key={t.name}
+              title={t.description ?? t.name}
+              style={{ border: '1px solid var(--dsw-alias-border-subtle, #d7dbe2)', borderRadius: 4, padding: '1px 6px' }}
+            >
+              {t.name}
+            </span>
+          ))}
+          {tools.length > shown.length && <span>+{tools.length - shown.length} 更多</span>}
+        </div>
+      )}
+      {/* MCP-V1.1:完整 Tool Preview(name/description/inputSchema;数据为只读展示) */}
+      <ToolCatalogView tools={tools.map((t) => ({ ...t, ...(t.inputSchema !== undefined ? { inputSchema: t.inputSchema } : {}) }))} />
+    </div>
+  )
+}
+
+/** 工具目录展示:name/description + 只读 inputSchema(不执行、不渲染 HTML)。 */
+function ToolCatalogView(props: {
+  tools: Array<{ name: string; description: string | null; inputSchema?: Record<string, unknown> }>
+  emptyText?: string
+}): React.ReactElement {
+  const tools = props.tools ?? []
+  if (tools.length === 0) {
+    return <div style={{ marginTop: 4, fontSize: 12, color: 'var(--dsw-alias-label-secondary, #5b6473)' }}>{props.emptyText ?? 'No tools discovered'}</div>
+  }
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
+      {tools.map((t) => (
+        <div key={t.name} style={{ border: '1px solid var(--dsw-alias-border-subtle, #d7dbe2)', borderRadius: 6, padding: '6px 8px' }}>
+          <div style={{ fontSize: 12, fontWeight: 600 }}>{t.name}</div>
+          {t.description !== null && t.description !== '' && (
+            <div style={{ fontSize: 11, color: 'var(--dsw-alias-label-secondary, #5b6473)' }}>{t.description}</div>
+          )}
+          {t.inputSchema !== undefined && Object.keys(t.inputSchema).length > 0 && (
+            <pre style={{ margin: '4px 0 0', fontSize: 10, background: 'var(--dsw-alias-bg-subtle, #f5f6f8)', borderRadius: 4, padding: '4px 6px', overflowX: 'auto', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+              {JSON.stringify(t.inputSchema, null, 2)}
+            </pre>
+          )}
+        </div>
+      ))}
+    </div>
   )
 }

@@ -11,8 +11,13 @@ import type { SkillRuntimeStatus } from '../platform-api.js'
 export interface SkillApi {
   listSkills(query: { q?: string; limit?: number; offset?: number }): Promise<SkillListResult>
   listInstalledSkills(): Promise<{ skills: Skill[] }>
-  createSkill(input: { name: string; description?: string; prompt?: string; visibility?: string }): Promise<Skill>
+  createSkill(input: {
+    name: string; description?: string; prompt?: string; visibility?: string
+  }): Promise<Skill>
+  updateSkill(id: string, input: { description?: string; prompt?: string; whenToUse?: string; modelInvocable?: boolean; userInvocable?: boolean }): Promise<{ ok: true; version?: string }>
+  getSkillVersions(id: string): Promise<{ versions: Array<{ version: string; createdAt: string }> }>
   publishSkill(id: string): Promise<{ ok: true }>
+  unpublishSkill(id: string): Promise<{ ok: true }>
   installSkill(id: string): Promise<{ ok: true }>
   uninstallSkill(id: string): Promise<{ ok: true }>
   /** 可选:真实 Runtime 投影状态(不可用时不阻塞面板)。 */
@@ -76,6 +81,11 @@ export async function uninstallSkillAndReload(api: SkillApi, id: string, query: 
 
 export async function publishSkillAndReload(api: SkillApi, id: string, query: { q?: string } = {}): Promise<ResourceState<SkillPanelData>> {
   await api.publishSkill(id)
+  return loadSkills(api, query)
+}
+
+export async function unpublishSkillAndReload(api: SkillApi, id: string, query: { q?: string } = {}): Promise<ResourceState<SkillPanelData>> {
+  await api.unpublishSkill(id)
   return loadSkills(api, query)
 }
 
