@@ -18,6 +18,7 @@ USE dsh_platform;
 
 -- 逆序清理(外键依赖的下游先删)
 DROP TABLE IF EXISTS t_dsh_memory_promotions;
+DROP TABLE IF EXISTS t_dsh_usage_events;
 DROP TABLE IF EXISTS t_dsh_memory_records;
 DROP TABLE IF EXISTS t_dsh_skill_favorites;
 DROP TABLE IF EXISTS t_dsh_skill_reviews;
@@ -67,8 +68,11 @@ CREATE TABLE t_dsh_users (
   password_hash VARCHAR(255),                  -- argon2id;仅 OIDC 登录的用户为 NULL(platform 设计 §3.1)
   role          VARCHAR(32)   NOT NULL DEFAULT 'member',  -- 'tenant_admin' | 'operator' | 'member'
   status        VARCHAR(16)   NOT NULL DEFAULT 'active',  -- active | disabled
+  auth_version  INT UNSIGNED  NOT NULL DEFAULT 0, -- 账号安全变更使旧会话失效
+  deleted_at    DATETIME(3)   NULL DEFAULT NULL, -- 逻辑删除，历史资产与邮箱归属保留
   created_at    DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   UNIQUE KEY uk_users_tenant_email (tenant_id, email),
+  UNIQUE KEY uk_users_email (email), -- 当前登录按邮箱全局定位用户
   KEY idx_users_external_sub (external_sub),
   CONSTRAINT fk_users_tenant FOREIGN KEY (tenant_id) REFERENCES t_dsh_tenants(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -135,8 +139,39 @@ CREATE TABLE t_dsh_usage_counters (
   day           DATE          NOT NULL,
   tokens_in     BIGINT        NOT NULL DEFAULT 0,
   tokens_out    BIGINT        NOT NULL DEFAULT 0,
-  requests      BIGINT        NOT NULL DEFAULT 0,
+  attempts      BIGINT        NOT NULL DEFAULT 0,
   PRIMARY KEY (tenant_id, day)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- DSH 模型调用用量明细。event_key 由 sessionId + event seq 构成，保证 Runtime
+-- 重试上报时幂等；身份由 Gateway 的 Runtime Token 推导，不接受插件自报。
+CREATE TABLE t_dsh_usage_events (
+  event_key        VARCHAR(255)  PRIMARY KEY,
+  tenant_id        CHAR(36)      NOT NULL,
+  user_id          CHAR(36)      NOT NULL,
+  session_id       VARCHAR(128)  NOT NULL,
+  event_seq        BIGINT        NOT NULL,
+  provider         VARCHAR(64)   NOT NULL DEFAULT 'unknown',
+  model            VARCHAR(128)  NOT NULL DEFAULT 'unknown',
+  event_type       VARCHAR(16)   NOT NULL DEFAULT 'message',
+  turn_no          BIGINT        NULL,
+  step_no          BIGINT        NULL,
+  usage_known      TINYINT(1)    NOT NULL DEFAULT 1,
+  cache_read_known TINYINT(1)    NOT NULL DEFAULT 0,
+  cache_write_known TINYINT(1)   NOT NULL DEFAULT 0,
+  reasoning_known TINYINT(1)     NOT NULL DEFAULT 0,
+  input_tokens     BIGINT        NOT NULL DEFAULT 0,
+  output_tokens    BIGINT        NOT NULL DEFAULT 0,
+  cache_read_tokens BIGINT       NOT NULL DEFAULT 0,
+  cache_write_tokens BIGINT      NOT NULL DEFAULT 0,
+  reasoning_tokens BIGINT        NOT NULL DEFAULT 0,
+  occurred_at      DATETIME(3)   NOT NULL,
+  created_at       DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  KEY idx_usage_tenant_time (tenant_id, occurred_at),
+  KEY idx_usage_user_time (tenant_id, user_id, occurred_at),
+  KEY idx_usage_model_time (tenant_id, model, occurred_at),
+  CONSTRAINT fk_usage_events_tenant FOREIGN KEY (tenant_id) REFERENCES t_dsh_tenants(id),
+  CONSTRAINT fk_usage_events_user FOREIGN KEY (user_id) REFERENCES t_dsh_users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- runtime 进程注册表(也可只放 Redis,落库便于审计)
@@ -168,7 +203,18 @@ CREATE TABLE t_dsh_audit_events (
   subject    VARCHAR(256),
   payload    JSON,
   at         DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-  KEY idx_audit_tenant_time (tenant_id, at)
+  actor_name VARCHAR(128),
+  resource_type VARCHAR(64),
+  resource_id VARCHAR(256),
+  result VARCHAR(16),
+  reason_code VARCHAR(64),
+  request_id VARCHAR(128),
+  client_ip VARCHAR(45),
+  user_agent VARCHAR(512),
+  source VARCHAR(16),
+  KEY idx_audit_tenant_time (tenant_id, at),
+  KEY idx_audit_actor_time (tenant_id, actor, at, id),
+  KEY idx_audit_action_time (tenant_id, action, at, id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Memory 长期记忆(Phase 03)

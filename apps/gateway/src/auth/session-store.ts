@@ -14,7 +14,7 @@ export interface SessionData {
   csrfSecret: string
   issuedAt: number
   lastSeen: number
-  /** 预留:批量吊销(§3.1 revocation_epoch)。 */
+  /** 登录时的用户 auth_version；每次鉴权与数据库比较，实现全设备会话撤销。 */
   revocationEpoch: number
 }
 

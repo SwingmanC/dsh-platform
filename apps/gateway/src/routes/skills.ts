@@ -3,10 +3,11 @@ import type { AuthenticatedPrincipal, TenantContext, SkillSearchInput } from '@d
 import { skillService, SKILL_IMPORT_EXTENSIONS } from '../services/skill-service.js'
 import { SKILL_MD_MAX_CHARS } from '../skill-format.js'
 import { buildSkillProjection, readSkillProjectionStatus, rebuildProjectionsForSkill } from '../skill-projection.js'
+import { auditService } from '../services/audit-service.js'
 import { getRuntime } from '../supervisor.js'
 
 function toCtx(p: AuthenticatedPrincipal): TenantContext {
-  return { tenantId: p.tenantId, userId: p.userId, role: p.role, requestId: '', platformSessionId: '', deviceId: p.deviceId }
+  return { tenantId: p.tenantId, userId: p.userId, role: p.role, requestId: p.requestId ?? '', platformSessionId: p.platformSessionId ?? '', deviceId: p.deviceId }
 }
 
 /** 重建 principal 自己的投影(失败不阻断业务 mutation)。 */
@@ -14,6 +15,7 @@ async function rebuildOwn(p: AuthenticatedPrincipal): Promise<void> {
   try {
     await buildSkillProjection(p.tenantId, p.userId)
   } catch (err) {
+    await auditService.write({ action: 'projection.sync', resourceType: 'skill', result: 'ERROR', reasonCode: 'projection-failed', payload: { syncStatus: 'failed' } })
     process.stderr.write(`[skill-projection] rebuild failed for ${p.userId}: ${String(err)}\n`)
   }
 }
@@ -170,6 +172,7 @@ export function registerSkillRoutes(app: FastifyInstance): void {
     if (!ok) return reply.code(400).send({ error: 'publish-failed' })
     // publish 影响所有真实安装者,逐个刷新投影(不只 publisher 自己)。
     try { await rebuildProjectionsForSkill(id) } catch (err) {
+      await auditService.write({ action: 'projection.sync', resourceType: 'skill', result: 'ERROR', reasonCode: 'projection-failed', payload: { syncStatus: 'failed' } })
       process.stderr.write(`[skill-projection] publish rebuild failed for ${id}: ${String(err)}\n`)
     }
     return { ok: true }

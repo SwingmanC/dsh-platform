@@ -1,4 +1,5 @@
 import type { TenantContext, KbChunk, KbSearchInput, KbSearchResult, KnowledgeBase, KbDocument, KbVisibility } from '@dsh-platform/shared'
+import { auditMutation } from './audit-service.js'
 import { knowledgeRepository } from '../repositories/knowledge-repository.js'
 import { ragEmbeddingConfigRepository } from '../repositories/rag-embedding-config-repository.js'
 import { getCredentialStore } from '../credentials/credential-store.js'
@@ -75,10 +76,10 @@ export class KnowledgeService {
   }
 
   async createBase(ctx: TenantContext, data: { name: string; description?: string; visibility?: string; category?: string }): Promise<KnowledgeBase> {
-    return knowledgeRepository.createBase(ctx, {
+    return auditMutation(ctx, 'knowledge.create', undefined, () => knowledgeRepository.createBase(ctx, {
       name: data.name, description: data.description,
       visibility: data.visibility as KbVisibility, category: data.category,
-    })
+    }))
   }
 
   async listDocuments(ctx: TenantContext, kbId: string): Promise<KbDocument[]> {
@@ -86,6 +87,11 @@ export class KnowledgeService {
   }
 
   async uploadDocument(ctx: TenantContext, kbId: string, filename: string, mime: string, buffer: Buffer): Promise<KbDocument> {
+    return auditMutation(ctx, 'knowledge.document.upload', kbId,
+      () => this.performUpload(ctx, kbId, filename, mime, buffer), { fileSize: buffer.length })
+  }
+
+  private async performUpload(ctx: TenantContext, kbId: string, filename: string, mime: string, buffer: Buffer): Promise<KbDocument> {
     const kb = await knowledgeRepository.findBase(ctx, kbId)
     if (!kb) throw new Error('knowledge-base-not-found')
     const ext = filename.split('.').pop()?.toLowerCase() ?? ''
@@ -307,12 +313,12 @@ export class KnowledgeService {
   }
 
   async mount(ctx: TenantContext, kbId: string): Promise<boolean> {
-    const ok = await knowledgeRepository.mount(ctx, kbId)
+    const ok = await auditMutation(ctx, 'knowledge.mount', kbId, () => knowledgeRepository.mount(ctx, kbId))
     return ok
   }
 
   async unmount(ctx: TenantContext, kbId: string): Promise<boolean> {
-    return knowledgeRepository.unmount(ctx, kbId)
+    return auditMutation(ctx, 'knowledge.unmount', kbId, () => knowledgeRepository.unmount(ctx, kbId))
   }
 
   async listMounts(ctx: TenantContext): Promise<KnowledgeBase[]> {

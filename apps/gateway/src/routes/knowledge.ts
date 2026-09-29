@@ -3,12 +3,13 @@ import type { AuthenticatedPrincipal, TenantContext, KbSearchInput } from '@dsh-
 import multipart from '@fastify/multipart'
 import { knowledgeService } from '../services/knowledge-service.js'
 import { readKnowledgeProjectionStatus } from '../knowledge-projection.js'
+import { auditService } from '../services/audit-service.js'
 import { getRuntime } from '../supervisor.js'
 import { resolveRuntimeToken } from '../internal-channel.js'
 import { KNOWLEDGE_MAX_TEXT_BYTES } from '../ingestion.js'
 
 function toCtx(p: AuthenticatedPrincipal): TenantContext {
-  return { tenantId: p.tenantId, userId: p.userId, role: p.role, requestId: '', platformSessionId: '', deviceId: p.deviceId }
+  return { tenantId: p.tenantId, userId: p.userId, role: p.role, requestId: p.requestId ?? '', platformSessionId: p.platformSessionId ?? '', deviceId: p.deviceId }
 }
 
 /** K-T1 multipart 允许集:扩展名 → 规范 MIME。 */
@@ -24,6 +25,7 @@ const GENERIC_MIME = new Set(['', 'application/octet-stream', 'application/x-dow
 
 async function rebuildProjection(p: AuthenticatedPrincipal): Promise<void> {
   try { await knowledgeService.buildProjection(p.userId, p.tenantId) } catch (err) {
+    await auditService.write({ action: 'projection.sync', resourceType: 'knowledge', result: 'ERROR', reasonCode: 'projection-failed', payload: { syncStatus: 'failed' } })
     process.stderr.write(`[knowledge-projection] rebuild failed for ${p.userId}: ${String(err)}\n`)
   }
 }

@@ -5,12 +5,12 @@ import { login, getMe } from './api.js'
 import { BrandMark } from './components/BrandMark.js'
 import './styles/tokens.css'
 
-/** 登录成功/已持有会话时直接进入的 dsh 操作界面(跳过平台首页中转)。 */
+/** Portal 只负责登录;登录页不能留在进入 DSH 后的浏览器历史中。 */
 const DSH_UI_URL: string = import.meta.env.VITE_DSH_UI_URL ?? 'http://localhost:8080/'
 
 /**
- * Portal 仅作为登录门:登录成功或已持有平台会话即整页跳转 dsh UI。
- * 首次进入时 Runtime 冷启动可能耗时数十秒,期间显示过渡屏,**绝不**渲染中转页。
+ * 登录成功/已持有会话时直接整页进入 DSH UI;Runtime 冷启动期间
+ * LoginView 内显示过渡态(entered),绝不渲染中转 dashboard。
  */
 function LoginView(): JSX.Element {
   const [email, setEmail] = useState('')
@@ -25,8 +25,10 @@ function LoginView(): JSX.Element {
       await login(email, password)
       // 平台会话已建立(sid cookie 跨 authority 共享);整页跳转到 dsh UI,
       // 由网关按 Host 反代到该用户的运行时实例。
+      // 平台会话已建立(sid cookie 与 authority 共享);整页替换跳转 dsh UI,
+      // 由网关按 Host 反代到该用户的运行时实例。
       setEntered(true)
-      window.location.assign(DSH_UI_URL)
+      window.location.replace(DSH_UI_URL)
     } catch (err) {
       const code = (err as Error).message
       setError(
@@ -89,22 +91,28 @@ function LoginView(): JSX.Element {
 }
 
 function App(): JSX.Element {
-  const [ready, setReady] = useState(false)
+  const [status, setStatus] = useState<'checking' | 'guest' | 'redirecting'>('checking')
 
   useEffect(() => {
+    let active = true
     getMe()
       .then((u) => {
-        // 已持有平台会话:直接整页跳转 dsh UI,不展示任何中转页。
-        if (u !== null) { window.location.assign(DSH_UI_URL); return }
+        if (!active) return
+        if (u !== null) {
+          // 已持有平台会话:直接整页替换跳转 dsh UI,不展示任何中转页。
+          setStatus('redirecting')
+          window.location.replace(DSH_UI_URL)
+        } else {
+          setStatus('guest')
+        }
       })
-      .catch(() => {})
-      .finally(() => setReady(true))
+      })
+      .catch(() => { if (active) setStatus('guest') })
+    return () => { active = false }
   }, [])
 
-  if (!ready) {
-    return <div style={{ padding: '80px', textAlign: 'center', color: 'var(--cmcc-text-secondary)' }}>加载中...</div>
-  }
-  return <LoginView />
+  if (status === 'guest') return <LoginView />
+  return <div style={{ padding: '80px', textAlign: 'center', color: 'var(--cmcc-text-secondary)' }}>加载中...</div>
 }
 
 const labelStyle: React.CSSProperties = { display: 'block', fontSize: '14px', fontWeight: 500, color: 'var(--cmcc-text)', marginBottom: '6px' }

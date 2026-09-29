@@ -2,14 +2,16 @@ import type { FastifyInstance } from 'fastify'
 import type { AuthenticatedPrincipal, TenantContext } from '@dsh-platform/shared'
 import { mcpService } from '../services/mcp-service.js'
 import { readMcpProjectionStatus, readMcpProjection, readMcpAck } from '../mcp-projection.js'
+import { auditService } from '../services/audit-service.js'
 import { getRuntime } from '../supervisor.js'
 
 function toCtx(p: AuthenticatedPrincipal): TenantContext {
-  return { tenantId: p.tenantId, userId: p.userId, role: p.role, requestId: '', platformSessionId: '', deviceId: p.deviceId }
+  return { tenantId: p.tenantId, userId: p.userId, role: p.role, requestId: p.requestId ?? '', platformSessionId: p.platformSessionId ?? '', deviceId: p.deviceId }
 }
 
 async function rebuildOwn(p: AuthenticatedPrincipal): Promise<void> {
   try { await mcpService.buildProjection(p.userId, p.tenantId) } catch (err) {
+    await auditService.write({ action: 'projection.sync', resourceType: 'connector', result: 'ERROR', reasonCode: 'projection-failed', payload: { syncStatus: 'failed' } })
     process.stderr.write(`[mcp-projection] rebuild failed for ${p.userId}: ${String(err)}\n`)
   }
 }

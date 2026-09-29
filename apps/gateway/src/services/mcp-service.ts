@@ -1,4 +1,5 @@
 import type { TenantContext, MCPConnector, MCPTransport, MCPScope, MCPRiskLevel } from '@dsh-platform/shared'
+import { auditMutation, auditService } from './audit-service.js'
 import { mcpRepository } from '../repositories/mcp-repository.js'
 import { getCredentialStore } from '../credentials/credential-store.js'
 import { buildMcpProjection, validateMcpUrl, SERVER_NAME_RE } from '../mcp-projection.js'
@@ -16,7 +17,12 @@ export class MCPService {
     return mcpRepository.list(ctx)
   }
 
-  async create(ctx: TenantContext, data: {
+  async create(ctx: TenantContext, data: Parameters<MCPService['performCreate']>[1]): Promise<MCPConnector> {
+    return auditMutation(ctx, 'connector.create', undefined, () => this.performCreate(ctx, data),
+      { transport: data.transport, scope: data.scope, riskLevel: data.riskLevel })
+  }
+
+  private async performCreate(ctx: TenantContext, data: {
     name: string; serverName: string; transport: string; scope?: string; riskLevel?: string;
     command?: string; endpointUrl?: string; authType?: string; visibility?: string
   }): Promise<MCPConnector> {
@@ -39,6 +45,12 @@ export class MCPService {
 
   /** 服务端审批边界:仅管理员。非管理员一律拒绝(不能靠前端隐藏按钮)。 */
   async approve(ctx: TenantContext, id: string): Promise<boolean> {
+    const ok = await auditMutation(ctx, 'connector.approve', id, () => this.performApprove(ctx, id))
+    if (ok) await this.sync(ctx, id)
+    return ok
+  }
+
+  private async performApprove(ctx: TenantContext, id: string): Promise<boolean> {
     if (!ADMIN_ROLES.has(ctx.role)) throw new Error('forbidden')
     const row = await mcpRepository.findRawById(id)
     if (!row) throw new Error('not-found')
@@ -47,19 +59,28 @@ export class MCPService {
       if (!v.ok) throw new Error(`url-rejected:${v.reason}`)
     }
     const ok = await mcpRepository.approve(id, ctx.userId)
-    if (ok) await this.rebuildProjectionsForConnector(id)
     return ok
   }
 
   async disable(ctx: TenantContext, id: string): Promise<boolean> {
+    const ok = await auditMutation(ctx, 'connector.disable', id, () => this.performDisable(ctx, id))
+    if (ok) await this.sync(ctx, id)
+    return ok
+  }
+
+  private async performDisable(ctx: TenantContext, id: string): Promise<boolean> {
     const owned = await mcpRepository.findOwned(ctx, id)
     if (!owned) throw new Error('not-found')
     const ok = await mcpRepository.disable(ctx, id)
-    if (ok) await this.rebuildProjectionsForConnector(id)
     return ok
   }
 
   async authorize(ctx: TenantContext, connectorId: string): Promise<boolean> {
+    const ok = await auditMutation(ctx, 'connector.authorize', connectorId, () => this.performAuthorize(ctx, connectorId))
+    return ok
+  }
+
+  private async performAuthorize(ctx: TenantContext, connectorId: string): Promise<boolean> {
     const connector = await mcpRepository.findById(ctx, connectorId)
     if (!connector) throw new Error('not-found')
     if (!connector.approved) throw new Error('not-approved')
@@ -74,7 +95,7 @@ export class MCPService {
   }
 
   async revoke(ctx: TenantContext, connectorId: string): Promise<boolean> {
-    return mcpRepository.revoke(ctx, connectorId)
+    return auditMutation(ctx, 'connector.revoke', connectorId, () => mcpRepository.revoke(ctx, connectorId))
   }
 
   async listAuthorized(ctx: TenantContext): Promise<MCPConnector[]> {
@@ -85,12 +106,27 @@ export class MCPService {
 
   /** 保存/轮换 credential(浏览器 TLS 提交;服务端加密;永不返回明文)。 */
   async saveCredential(ctx: TenantContext, connectorId: string, secret: string): Promise<void> {
+    await auditMutation(ctx, 'connector.credential.rotate', connectorId,
+      () => this.performSaveCredential(ctx, connectorId, secret), { configured: true })
+    await this.sync(ctx, connectorId)
+  }
+
+  private async performSaveCredential(ctx: TenantContext, connectorId: string, secret: string): Promise<void> {
     const connector = await mcpRepository.findById(ctx, connectorId)
     if (!connector) throw new Error('not-found')
     if (secret.trim() === '') throw new Error('empty-secret')
     const envelope = getCredentialStore().seal(secret)
     await mcpRepository.putCredential(ctx.tenantId, connectorId, envelope)
-    await this.rebuildProjectionsForConnector(connectorId)
+  }
+
+  private async sync(ctx: TenantContext, connectorId: string): Promise<void> {
+    try {
+      await this.rebuildProjectionsForConnector(connectorId)
+    } catch (error) {
+      await auditService.write({ ctx, action: 'projection.sync', resourceType: 'connector', resourceId: connectorId,
+        result: 'ERROR', reasonCode: 'projection-failed', payload: { syncStatus: 'failed' } })
+      throw error
+    }
   }
 
   async buildProjection(userId: string, tenantId: string): Promise<void> {

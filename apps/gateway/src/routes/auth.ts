@@ -1,11 +1,11 @@
 import type { FastifyInstance } from 'fastify'
 import type { RowDataPacket } from 'mysql2/promise'
 import type { LoginRequest, LoginResponse, MeResponse, UserRole } from '@dsh-platform/shared'
-import { queryOne } from '../db.js'
+import { queryMany } from '../db.js'
 import { verifyPassword } from '../auth/password.js'
 import type { SessionService } from '../auth/session.js'
 import { checkLoginAllowed, clearLoginFailures, loginKey, recordLoginFailure } from '../auth/login-guard.js'
-import { auditRepository } from '../repositories/audit-repository.js'
+import { auditService } from '../services/audit-service.js'
 
 interface UserRow extends RowDataPacket {
   id: string
@@ -14,6 +14,7 @@ interface UserRow extends RowDataPacket {
   role: UserRole
   status: string
   passwordHash: string | null
+  authVersion: number
 }
 
 const DUMMY_HASH =
@@ -35,24 +36,28 @@ export function registerAuthRoutes(app: FastifyInstance, sessions: SessionServic
     if (!gate.allowed) {
       const retryAfter = Math.ceil(gate.retryAfterMs / 1000)
       reply.header('retry-after', String(retryAfter))
-      await auditRepository.write({ action: 'login.failed', subject: email, payload: { ip: req.ip, reason: 'locked' } })
+      await auditService.write({ action: 'login.locked', result: 'DENIED', subject: email, reasonCode: 'locked' })
       return reply.code(429).send({ error: 'too-many-attempts', code: 'locked', retryAfter })
     }
 
-    const user = await queryOne<UserRow>(
+    const users = await queryMany<UserRow>(
       `SELECT id, tenant_id AS tenantId, display_name AS displayName, role, status,
-              password_hash AS passwordHash
+              password_hash AS passwordHash, auth_version AS authVersion
          FROM t_dsh_users
-        WHERE email = ?
-        LIMIT 1`, [email])
+        WHERE email = ? AND deleted_at IS NULL
+        LIMIT 2`, [email])
+    // 存量跨租户同邮箱在完成迁移前也不能随机登录其中一个账号。
+    const user = users.length === 1 ? users[0] : undefined
 
     const hash = user?.passwordHash ?? DUMMY_HASH
     const ok = await verifyPassword(hash, password)
 
     if (user === undefined || !ok) {
       const locked = recordLoginFailure(key)
-      await auditRepository.write({
-        action: locked ? 'login.failed' : 'login.failed',
+      await auditService.write({
+        action: locked ? 'login.locked' : 'login.failed',
+        result: 'DENIED',
+        identity: user ? { tenantId: user.tenantId, userId: user.id, displayName: user.displayName } : undefined,
         subject: email,
         payload: { ip: req.ip, locked },
       })
@@ -60,16 +65,16 @@ export function registerAuthRoutes(app: FastifyInstance, sessions: SessionServic
     }
 
     if (user.status !== 'active') {
-      await auditRepository.write({ action: 'login.failed', subject: email, payload: { reason: 'disabled' } })
+      await auditService.write({ action: 'login.failed', result: 'DENIED', identity: { tenantId: user.tenantId, userId: user.id, displayName: user.displayName }, subject: email, reasonCode: 'disabled' })
       return reply.code(403).send({ error: 'account-disabled', code: 'account-disabled' })
     }
 
     clearLoginFailures(key)
     const deviceId = sessions.resolveDeviceId(req, reply)
     await sessions.establish(reply, {
-      userId: user.id, tenantId: user.tenantId, displayName: user.displayName, role: user.role,
+      userId: user.id, tenantId: user.tenantId, displayName: user.displayName, role: user.role, authVersion: user.authVersion,
     }, deviceId)
-    await auditRepository.write({ action: 'login.success', subject: email, payload: { userId: user.id } })
+    await auditService.write({ action: 'login.success', identity: { tenantId: user.tenantId, userId: user.id, displayName: user.displayName }, resourceType: 'user', resourceId: user.id })
 
     const response: LoginResponse = { userId: user.id, displayName: user.displayName, role: user.role }
     return reply.send(response)
@@ -89,7 +94,7 @@ export function registerAuthRoutes(app: FastifyInstance, sessions: SessionServic
       return reply.code(403).send({ error: 'csrf-failed', code: 'csrf-failed' })
     }
     await sessions.destroy(req, reply)
-    await auditRepository.write({ action: 'logout', subject: session.principal.userId })
+    await auditService.write({ action: 'logout', identity: session.principal, subject: session.principal.userId })
     return reply.code(302).header('location', '/login').send()
   })
 }

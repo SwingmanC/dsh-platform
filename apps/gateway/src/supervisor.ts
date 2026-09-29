@@ -1,3 +1,4 @@
+import { auditService } from './services/audit-service.js'
 import { spawn } from 'node:child_process'
 import type { ChildProcess, SpawnOptions } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -18,6 +19,7 @@ import { getCredentialStore } from './credentials/credential-store.js'
 import { memoryService } from './services/memory-service.js'
 import { memoryProjectionDir } from './memory-projection.js'
 import { issueRuntimeToken, revokeRuntimeToken } from './internal-channel.js'
+import { loadUserAuthState } from './auth/user-state.js'
 import { ensureDefaultWorkspace } from './platform.js'
 import { migrateAgentPresetSetting } from './agent-preset-migration.js'
 
@@ -71,6 +73,8 @@ export interface RuntimeUser {
 
 const registry = new Map<string, RuntimeInfo>()
 const inflight = new Map<string, Promise<RuntimeInfo>>()
+const accessGeneration = new Map<string, number>()
+const revoking = new Map<string, Promise<void>>()
 const children = new Map<string, ChildProcess>()
 
 /** 仅测试/排障用。 */
@@ -138,6 +142,9 @@ function childEnv(homeDir: string, workspaceRoot: string, user: RuntimeUser, mcp
   env.PLATFORM_MEMORY_PROJECTION_DIR = memoryProjectionDir(user.tenantId, user.userId)
   env.PLATFORM_MEMORY_INTERNAL_URL = `http://127.0.0.1:${config.port}`
   env.PLATFORM_MEMORY_INTERNAL_TOKEN = memoryToken
+  // 通用 Runtime → Gateway 内部通道；身份只由短期 token 推导。
+  env.PLATFORM_INTERNAL_URL = `http://127.0.0.1:${config.port}`
+  env.PLATFORM_INTERNAL_TOKEN = memoryToken
   env.PLATFORM_MEMORY_MAX_RECALL_ITEMS = String(config.memory.maxRecallItems)
   env.PLATFORM_MEMORY_MAX_RECALL_BYTES = String(config.memory.maxRecallBytes)
   env.PLATFORM_MEMORY_MAX_ITEM_BYTES = String(config.memory.maxItemBytes)
@@ -288,6 +295,12 @@ function touchRuntimeRow(runtimeId: string): void {
  */
 export async function ensureRuntime(user: RuntimeUser | AuthenticatedPrincipal): Promise<RuntimeInfo> {
   const userId = user.userId
+  await revoking.get(userId)
+  const generation = accessGeneration.get(userId) ?? 0
+  const account = await loadUserAuthState(userId)
+  if (!account || account.status !== 'active' || account.tenantId !== user.tenantId
+    || ('authVersion' in user && user.authVersion !== account.authVersion)
+    || generation !== (accessGeneration.get(userId) ?? 0)) throw new Error('runtime-account-revoked')
   const existing = registry.get(userId)
   if (existing !== undefined && existing.state === 'ready') {
     existing.lastActivity = Date.now()
@@ -298,12 +311,26 @@ export async function ensureRuntime(user: RuntimeUser | AuthenticatedPrincipal):
   const pending = inflight.get(user.userId)
   if (pending !== undefined) return pending
 
-  const task = spawnRuntime(user).finally(() => inflight.delete(user.userId))
+  const task = (async () => {
+    try {
+      const runtime = await spawnRuntime(user, generation)
+      await auditService.write({ action: 'runtime.start', identity: user, resourceId: runtime.runtimeId })
+      await auditService.write({ action: 'runtime.ready', identity: user, resourceId: runtime.runtimeId })
+      return runtime
+    } catch (error) {
+      await auditService.write({ action: 'runtime.start', identity: user, resourceId: user.userId,
+        result: 'ERROR', reasonCode: 'runtime-start-failed' })
+      throw error
+    }
+  })().finally(() => inflight.delete(user.userId))
   inflight.set(user.userId, task)
   return task
 }
 
-async function spawnRuntime(user: RuntimeUser): Promise<RuntimeInfo> {
+async function spawnRuntime(user: RuntimeUser, generation: number): Promise<RuntimeInfo> {
+  const checkGeneration = (): void => {
+    if (generation !== (accessGeneration.get(user.userId) ?? 0)) throw new Error('runtime-account-revoked')
+  }
   const homeDir = path.join(config.dsh.homesRoot, user.tenantId, user.userId)
   const workspaceRoot = path.join(config.dsh.workspacesRoot, user.tenantId, user.userId)
   await mkdir(homeDir, { recursive: true })
@@ -350,6 +377,7 @@ async function spawnRuntime(user: RuntimeUser): Promise<RuntimeInfo> {
   }
   const __t3 = performance.now()
   process.stderr.write(`[timing] PROJECTION_MEMORY_END duration_ms=${(__t3 - __t2).toFixed(0)}\n`)
+  checkGeneration()
   const memoryToken = issueRuntimeToken(user.userId, user.tenantId)
   // Runtime start:确保用户默认 Workspace(服务端 provisioning;普通用户无需 native picker)。
   let defaultWorkspace: { path: string; title: string } | null = null
@@ -395,6 +423,7 @@ async function spawnRuntime(user: RuntimeUser): Promise<RuntimeInfo> {
 
   // 开发联调:未安装 dsh 时固定代理到 mock 上游,不拉起进程。
   if (config.dsh.mockUpstream !== null) {
+    checkGeneration()
     base.state = 'ready'
     base.upstreamUrl = config.dsh.mockUpstream
     registry.set(user.userId, base)
@@ -432,6 +461,7 @@ async function spawnRuntime(user: RuntimeUser): Promise<RuntimeInfo> {
   }
 
   process.stderr.write(`[timing] PROCESS_SPAWN_BEGIN user=${user.userId}\n`)
+  checkGeneration()
   const child = spawnDsh(spawnArgs, {
     cwd: homeDir,
     env: childEnvironment,
@@ -512,6 +542,8 @@ async function spawnRuntime(user: RuntimeUser): Promise<RuntimeInfo> {
       children.delete(user.userId)
       // Runtime 退出:轮换/吊销 internal channel token。
       revokeRuntimeToken(user.userId)
+      void auditService.write({ action: 'runtime.dead', identity: { tenantId: user.tenantId }, source: 'system', resourceId: base.runtimeId,
+        result: base.state === 'draining' || (base.state === 'ready' && code === 0) ? 'SUCCESS' : 'ERROR', payload: { userId: user.userId, code, signal } })
       const current = registry.get(user.userId)
       if (current !== undefined) {
         // 进程退出:清空内存中的 launch token,旧 token 不得复用。
@@ -559,6 +591,27 @@ export async function drainRuntime(userId: string): Promise<void> {
   children.delete(userId)
   registry.delete(userId)
   updateRuntimeState(runtime.runtimeId, 'dead')
+  await auditService.write({ action: 'runtime.drain', identity: { tenantId: runtime.tenantId }, source: 'system', resourceId: runtime.runtimeId, payload: { userId } })
+}
+
+/** 账号安全变更：阻止尚在准备的启动任务，撤销内部令牌并断开现有 Runtime。 */
+export async function revokeUserRuntime(userId: string): Promise<void> {
+  const previous = revoking.get(userId)
+  if (previous) return previous
+  accessGeneration.set(userId, (accessGeneration.get(userId) ?? 0) + 1)
+  revokeRuntimeToken(userId)
+  const task = (async () => {
+    const child = children.get(userId)
+    if (child) {
+      child.kill()
+      await waitForExit(child, 5000)
+    }
+    await drainRuntime(userId)
+    // 等待启动任务观察撤销，避免它与新登录启动的进程共享 registry。
+    await inflight.get(userId)?.catch(() => undefined)
+  })().finally(() => revoking.delete(userId))
+  revoking.set(userId, task)
+  return task
 }
 
 /** 空闲回收巡检:全部会话空闲超过 idleTtlMs 即回收。 */

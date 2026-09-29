@@ -151,6 +151,10 @@ importers:
         version: 5.9.3
 
   packages/cmcc-platform-ui:
+    dependencies:
+      '@dsh-platform/shared':
+        specifier: workspace:*
+        version: link:../shared
     devDependencies:
       '@types/node':
         specifier: ^22.10.0
@@ -181,6 +185,18 @@ importers:
         version: 5.9.3
 
   packages/cmcc-workspace-bootstrap:
+    devDependencies:
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.2
+      tsx:
+        specifier: ^4.19.0
+        version: 4.23.13
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+
+  packages/cmcc-usage-reporter:
     devDependencies:
       '@types/node':
         specifier: ^22.10.0

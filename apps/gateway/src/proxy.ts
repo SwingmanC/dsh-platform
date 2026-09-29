@@ -9,7 +9,7 @@ import httpProxy from '@fastify/http-proxy'
 import { config } from './config.js'
 import { ensureRuntime, getRuntime } from './supervisor.js'
 import type { RuntimeInfo } from './supervisor.js'
-import { auditRepository } from './repositories/audit-repository.js'
+import { auditService } from './services/audit-service.js'
 import { seedUserSessions } from './session-sync.js'
 import type { SessionService } from './auth/session.js'
 
@@ -179,7 +179,7 @@ export function registerDshUiProxy(app: FastifyInstance, sessions: SessionServic
       }
     } catch (err) {
       app.log.error({ err, userId: principal.userId }, 'ensureRuntime failed')
-      await auditRepository.write({
+      await auditService.write({
         action: 'runtime.ensure',
         subject: `runtime spawn failed for ${principal.userId}`,
         payload: { message: (err as Error).message },
