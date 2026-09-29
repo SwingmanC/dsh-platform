@@ -8,6 +8,7 @@ import assert from 'node:assert'
 import { randomUUID } from 'node:crypto'
 import http from 'node:http'
 import { execute, queryMany, queryOne, pool } from '../src/db.js'
+import { closeAuditWriter } from '../src/repositories/audit-repository.js'
 import { knowledgeService } from '../src/services/knowledge-service.js'
 import { knowledgeRepository } from '../src/repositories/knowledge-repository.js'
 import { ragEmbeddingConfigRepository } from '../src/repositories/rag-embedding-config-repository.js'
@@ -178,6 +179,7 @@ describe('K-T5-lite 自动 embedding 闭环', () => {
     await execute(`DELETE FROM t_dsh_knowledge_bases WHERE id IN (?, ?)`, [kbA, kbB]).catch(() => undefined)
     await execute(`DELETE FROM t_dsh_tenants WHERE id IN (?, ?)`, [TA, TB]).catch(() => undefined)
     await mock.close()
+    await closeAuditWriter().catch(() => undefined)
     await pool.end()
     // mock/keep-alive socket 可能滞留事件循环:测试完成后强制退出(node --test 语义下合法)
     setImmediate(() => process.exit(0))

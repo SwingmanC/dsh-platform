@@ -6,6 +6,7 @@ import { describe, it, after } from 'node:test'
 import assert from 'node:assert'
 import { randomUUID } from 'node:crypto'
 import { execute, queryOne, pool } from '../src/db.js'
+import { closeAuditWriter } from '../src/repositories/audit-repository.js'
 import { skillRepository } from '../src/repositories/skill-repository.js'
 import { skillService } from '../src/services/skill-service.js'
 import type { TenantContext } from '@dsh-platform/shared'
@@ -99,6 +100,7 @@ describe('SKILL-V1.2 metadata 生命周期', () => {
     await execute(`DELETE FROM t_dsh_knowledge_mounts WHERE kb_id = ?`, [kbA]).catch(() => undefined)
     await execute(`DELETE FROM t_dsh_knowledge_bases WHERE id = ?`, [kbA]).catch(() => undefined)
     await execute(`DELETE FROM t_dsh_tenants WHERE id = ?`, [TA]).catch(() => undefined)
+    await closeAuditWriter().catch(() => undefined)
     await pool.end()
   })
 })

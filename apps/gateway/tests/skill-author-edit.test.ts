@@ -6,6 +6,7 @@ import { describe, it, after } from 'node:test'
 import assert from 'node:assert'
 import { randomUUID } from 'node:crypto'
 import { execute, queryOne, queryMany, pool } from '../src/db.js'
+import { closeAuditWriter } from '../src/repositories/audit-repository.js'
 import { skillRepository } from '../src/repositories/skill-repository.js'
 import { skillService } from '../src/services/skill-service.js'
 import type { TenantContext } from '@dsh-platform/shared'
@@ -142,6 +143,7 @@ describe('SKILL-V1.1 作者编辑 + 版本生命周期', () => {
     await execute(`DELETE FROM t_dsh_knowledge_bases WHERE id = ?`, [kbA]).catch(() => undefined)
     await execute(`DELETE FROM t_dsh_users WHERE id IN (?, ?, ?)`, [UA, UB, U2]).catch(() => undefined)
     await execute(`DELETE FROM t_dsh_tenants WHERE id IN (?, ?)`, [TA, TB]).catch(() => undefined)
+    await closeAuditWriter().catch(() => undefined)
     await pool.end()
   })
 })

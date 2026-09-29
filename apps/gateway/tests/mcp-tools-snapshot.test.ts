@@ -7,6 +7,7 @@ import { describe, it, after } from 'node:test'
 import assert from 'node:assert'
 import { randomUUID } from 'node:crypto'
 import { execute, queryOne, pool } from '../src/db.js'
+import { closeAuditWriter } from '../src/repositories/audit-repository.js'
 import { mcpRepository } from '../src/repositories/mcp-repository.js'
 import { mcpService } from '../src/services/mcp-service.js'
 
@@ -81,6 +82,7 @@ describe('MCP-V1.1 discovery snapshot 持久化', () => {
     await execute(`DELETE FROM t_dsh_mcp_connectors WHERE name IN ('mcp11-ok','mcp11-dead')`).catch(() => undefined)
     await execute(`DELETE FROM t_dsh_knowledge_bases WHERE id = ?`, [kbA]).catch(() => undefined)
     await execute(`DELETE FROM t_dsh_tenants WHERE id IN (?, ?)`, [TA, TB]).catch(() => undefined)
+    await closeAuditWriter().catch(() => undefined)
     await pool.end()
   })
 })

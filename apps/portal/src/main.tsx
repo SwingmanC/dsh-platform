@@ -106,7 +106,6 @@ function App(): JSX.Element {
           setStatus('guest')
         }
       })
-      })
       .catch(() => { if (active) setStatus('guest') })
     return () => { active = false }
   }, [])

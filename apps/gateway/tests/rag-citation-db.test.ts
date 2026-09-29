@@ -6,6 +6,7 @@ import { describe, it, after } from 'node:test'
 import assert from 'node:assert'
 import { randomUUID } from 'node:crypto'
 import { execute, queryOne, pool } from '../src/db.js'
+import { closeAuditWriter } from '../src/repositories/audit-repository.js'
 import { knowledgeService } from '../src/services/knowledge-service.js'
 import { knowledgeRepository } from '../src/repositories/knowledge-repository.js'
 
@@ -118,6 +119,7 @@ describe('K-T7 Citation(真实 MySQL)', () => {
     await execute(`DELETE FROM t_dsh_knowledge_bases WHERE id IN (?, ?)`, [kbA, kbB]).catch(() => undefined)
     await execute(`DELETE FROM t_dsh_users WHERE id IN (?, ?)`, [UA, UB]).catch(() => undefined)
     await execute(`DELETE FROM t_dsh_tenants WHERE id IN (?, ?)`, [TA, TB]).catch(() => undefined)
+    await closeAuditWriter().catch(() => undefined)
     await pool.end()
   })
 })
